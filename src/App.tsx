@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, {useState, useEffect, useCallback} from 'react';
+import React, {useState, useEffect} from 'react';
 import {Header} from './components/Header';
 import {MainTracker} from './components/MainTracker';
 import {HistoricReports} from './components/HistoricReports';
@@ -14,30 +14,43 @@ import {
   LogEvent,
 } from './types/produodopa';
 import {
-  loadSettings,
-  saveSettings,
-  loadPumpState,
-  savePumpState,
-  loadAllEvents,
-  saveAllEvents,
-  addEvent,
-  seedSampleDataIfEmpty,
-  pruneOldRecords,
+  isTestModeActive,
+  loadCurrentSettings,
+  saveCurrentSettings,
+  loadCurrentPumpState,
+  saveCurrentPumpState,
+  loadCurrentEvents,
+  saveCurrentEvents,
+  switchMode,
+  resetTestScenario,
+  resetRealDataToFirstUse,
+  generateDefaultRealPumpState,
+  DEFAULT_SETTINGS,
 } from './services/storage';
+
+// Initialize real data for first-time use
+function ensureInitialized(): boolean {
+  const initializedKey = 'produodopa_real_initialized_v2';
+  if (!localStorage.getItem(initializedKey)) {
+    // First deployment: full syringe, no historic data, stopped state
+    const realPumpState = generateDefaultRealPumpState();
+    localStorage.setItem('produodopa_real_pump_state_v2', JSON.stringify(realPumpState));
+    localStorage.setItem('produodopa_real_events_v2', JSON.stringify([]));
+    localStorage.setItem('produodopa_real_settings_v2', JSON.stringify(DEFAULT_SETTINGS));
+    localStorage.setItem(initializedKey, 'true');
+    // Ensure test mode is off by default
+    localStorage.setItem('produodopa_is_test_mode_v2', 'false');
+    return false;
+  }
+  return isTestModeActive();
+}
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'main' | 'history' | 'settings'>('main');
-  const [settings, setSettings] = useState<RateSettings>(() => loadSettings());
-  const [pumpState, setPumpState] = useState<PumpState>(() => loadPumpState());
-  const [events, setEvents] = useState<LogEvent[]>(() => {
-    seedSampleDataIfEmpty();
-    return loadAllEvents();
-  });
-
-  // On mount, ensure old records > 90 days are pruned
-  useEffect(() => {
-    pruneOldRecords();
-  }, []);
+  const [isTestMode, setIsTestMode] = useState<boolean>(() => ensureInitialized());
+  const [settings, setSettings] = useState<RateSettings>(() => loadCurrentSettings(isTestModeActive()));
+  const [pumpState, setPumpState] = useState<PumpState>(() => loadCurrentPumpState(isTestModeActive()));
+  const [events, setEvents] = useState<LogEvent[]>(() => loadCurrentEvents(isTestModeActive()));
 
   // Periodic volume accumulation ticker when pump is running
   useEffect(() => {
@@ -64,45 +77,71 @@ export default function App() {
           lastTickTimestamp: new Date(nowMs).toISOString(),
         };
 
-        savePumpState(updated);
+        saveCurrentPumpState(updated, isTestMode);
         return updated;
       });
-    }, 5000); // sync every 5 seconds
+    }, 5000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [isTestMode]);
+
+  // Mode toggle handler (Real Data vs Test Data)
+  const handleToggleTestMode = (enableTest: boolean) => {
+    const switched = switchMode(enableTest, pumpState, events, settings);
+    setIsTestMode(enableTest);
+    setPumpState(switched.newPumpState);
+    setEvents(switched.newEvents);
+    setSettings(switched.newSettings);
+  };
+
+  // Reset test scenario data handler
+  const handleResetTestData = () => {
+    const reset = resetTestScenario();
+    setPumpState(reset.pumpState);
+    setEvents(reset.events);
+    setSettings(reset.settings);
+  };
+
+  // Reset real data to first-use baseline handler
+  const handleResetRealData = () => {
+    const reset = resetRealDataToFirstUse();
+    setPumpState(reset.pumpState);
+    setEvents(reset.events);
+    setSettings(reset.settings);
+  };
 
   // Save settings handler
   const handleSaveSettings = (newSettings: RateSettings) => {
     setSettings(newSettings);
-    saveSettings(newSettings);
+    saveCurrentSettings(newSettings, isTestMode);
 
     // If current level corresponds to low/base/high, update current rate
     if (pumpState.currentLevel === 'low') {
       const updated = {...pumpState, currentRate: newSettings.lowRate};
       setPumpState(updated);
-      savePumpState(updated);
+      saveCurrentPumpState(updated, isTestMode);
     } else if (pumpState.currentLevel === 'base') {
       const updated = {...pumpState, currentRate: newSettings.baseRate};
       setPumpState(updated);
-      savePumpState(updated);
+      saveCurrentPumpState(updated, isTestMode);
     } else if (pumpState.currentLevel === 'high') {
       const updated = {...pumpState, currentRate: newSettings.highRate};
       setPumpState(updated);
-      savePumpState(updated);
+      saveCurrentPumpState(updated, isTestMode);
     }
   };
 
   // Save pump state handler
   const handleUpdatePumpState = (newState: PumpState) => {
     setPumpState(newState);
-    savePumpState(newState);
+    saveCurrentPumpState(newState, isTestMode);
   };
 
   // Add event handler
   const handleAddEvent = (event: LogEvent) => {
-    const updated = addEvent(event);
+    const updated = [event, ...events];
     setEvents(updated);
+    saveCurrentEvents(updated, isTestMode);
   };
 
   // Undo extra dose handler
@@ -117,26 +156,20 @@ export default function App() {
         doseAmount: settings.extraDoseAmount,
       },
     };
-    const updated = addEvent(undoEvent);
+    const updated = [undoEvent, ...events];
     setEvents(updated);
-  };
-
-  // Reset sample data handler
-  const handleResetData = () => {
-    localStorage.clear();
-    seedSampleDataIfEmpty();
-    setSettings(loadSettings());
-    setPumpState(loadPumpState());
-    setEvents(loadAllEvents());
+    saveCurrentEvents(updated, isTestMode);
   };
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col selection:bg-sky-500 selection:text-white">
-      {/* Top Bar Header */}
+      {/* Top Bar Header with Test Mode awareness */}
       <Header
         activeTab={activeTab}
         onSelectTab={setActiveTab}
         isRunning={pumpState.isRunning}
+        isTestMode={isTestMode}
+        onExitTestMode={() => handleToggleTestMode(false)}
       />
 
       {/* Main Content Area */}
@@ -159,8 +192,11 @@ export default function App() {
         {activeTab === 'settings' && (
           <SettingsPanel
             settings={settings}
+            isTestMode={isTestMode}
             onSaveSettings={handleSaveSettings}
-            onResetData={handleResetData}
+            onToggleTestMode={handleToggleTestMode}
+            onResetTestData={handleResetTestData}
+            onResetRealData={handleResetRealData}
           />
         )}
       </main>
@@ -172,7 +208,7 @@ export default function App() {
             Pro-Duodopa (Fos-levodopa / Fos-Carbidopa) Continuous Infusion Tracker
           </span>
           <span className="font-mono text-[11px] tabular-nums">
-            Offline Storage Active · 24h Clinical Clock
+            {isTestMode ? 'Simulated Test Mode Active' : 'Offline Local Storage Active'} · 24h Clinical Clock
           </span>
         </div>
       </footer>

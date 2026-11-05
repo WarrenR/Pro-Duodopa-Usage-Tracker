@@ -168,54 +168,68 @@ export const HistoricReports: React.FC<HistoricReportsProps> = ({
     // Plot bars
     ctx.textAlign = 'center';
     if (viewMode === 'day') {
-      const barSlot = plotW / chartDays.length;
-      const barW = Math.max(20, barSlot * 0.55);
+      if (chartDays.length === 0) {
+        ctx.fillStyle = '#64748b';
+        ctx.font = 'italic 16px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+        ctx.fillText('No completed historic days recorded yet (current day will archive at midnight 00:00).', width / 2, plotY + plotH / 2);
+        ctx.fillText('Switch to Test Mode in Settings to preview historical reports with simulated clinical data.', width / 2, plotY + plotH / 2 + 30);
+      } else {
+        const barSlot = plotW / chartDays.length;
+        const barW = Math.max(20, barSlot * 0.55);
 
-      chartDays.forEach((d, idx) => {
-        const x = plotX + idx * barSlot + barSlot / 2;
-        const baselineH = (d.baselineInfusedMl / maxVal) * plotH;
-        const extraH = (d.extraDosesMl / maxVal) * plotH;
+        chartDays.forEach((d, idx) => {
+          const x = plotX + idx * barSlot + barSlot / 2;
+          const baselineH = (d.baselineInfusedMl / maxVal) * plotH;
+          const extraH = (d.extraDosesMl / maxVal) * plotH;
 
-        // Baseline bar (Blue)
-        ctx.fillStyle = '#0284c7';
-        ctx.fillRect(x - barW / 2, plotY + plotH - baselineH, barW, baselineH);
+          // Baseline bar (Blue)
+          ctx.fillStyle = '#0284c7';
+          ctx.fillRect(x - barW / 2, plotY + plotH - baselineH, barW, baselineH);
 
-        // Extra dose bar (Amber)
-        if (extraH > 0) {
-          ctx.fillStyle = '#f59e0b';
-          ctx.fillRect(x - barW / 2, plotY + plotH - baselineH - extraH, barW, extraH);
-        }
+          // Extra dose bar (Amber)
+          if (extraH > 0) {
+            ctx.fillStyle = '#f59e0b';
+            ctx.fillRect(x - barW / 2, plotY + plotH - baselineH - extraH, barW, extraH);
+          }
 
-        // Total label on top
-        ctx.fillStyle = '#0f172a';
-        ctx.font = 'bold 11px "SF Mono", Menlo, monospace';
-        ctx.fillText(`${d.totalInfusedMl.toFixed(1)}`, x, plotY + plotH - baselineH - extraH - 8);
+          // Total label on top
+          ctx.fillStyle = '#0f172a';
+          ctx.font = 'bold 11px "SF Mono", Menlo, monospace';
+          ctx.fillText(`${d.totalInfusedMl.toFixed(1)}`, x, plotY + plotH - baselineH - extraH - 8);
 
-        // Date label below
-        ctx.fillStyle = '#475569';
-        ctx.font = '11px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-        const dateShort = d.dateStr.slice(0, 5); // DD/MM
-        ctx.fillText(dateShort, x, plotY + plotH + 20);
-      });
+          // Date label below
+          ctx.fillStyle = '#475569';
+          ctx.font = '11px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+          const dateShort = d.dateStr.slice(0, 5); // DD/MM
+          ctx.fillText(dateShort, x, plotY + plotH + 20);
+        });
+      }
     } else {
-      const barSlot = plotW / chartWeeks.length;
-      const barW = Math.max(30, barSlot * 0.6);
+      if (chartWeeks.length === 0) {
+        ctx.fillStyle = '#64748b';
+        ctx.font = 'italic 16px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+        ctx.fillText('No completed weekly records logged yet.', width / 2, plotY + plotH / 2);
+        ctx.fillText('Switch to Test Mode in Settings to preview weekly rollup charts.', width / 2, plotY + plotH / 2 + 30);
+      } else {
+        const barSlot = plotW / chartWeeks.length;
+        const barW = Math.max(30, barSlot * 0.6);
 
-      chartWeeks.forEach((w, idx) => {
-        const x = plotX + idx * barSlot + barSlot / 2;
-        const totalH = (w.totalInfusedMl / maxVal) * plotH;
+        chartWeeks.forEach((w, idx) => {
+          const x = plotX + idx * barSlot + barSlot / 2;
+          const totalH = (w.totalInfusedMl / maxVal) * plotH;
 
-        ctx.fillStyle = '#0284c7';
-        ctx.fillRect(x - barW / 2, plotY + plotH - totalH, barW, totalH);
+          ctx.fillStyle = '#0284c7';
+          ctx.fillRect(x - barW / 2, plotY + plotH - totalH, barW, totalH);
 
-        ctx.fillStyle = '#0f172a';
-        ctx.font = 'bold 12px "SF Mono", Menlo, monospace';
-        ctx.fillText(`${w.totalInfusedMl.toFixed(1)} ml`, x, plotY + plotH - totalH - 8);
+          ctx.fillStyle = '#0f172a';
+          ctx.font = 'bold 12px "SF Mono", Menlo, monospace';
+          ctx.fillText(`${w.totalInfusedMl.toFixed(1)} ml`, x, plotY + plotH - totalH - 8);
 
-        ctx.fillStyle = '#475569';
-        ctx.font = '11px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-        ctx.fillText(`Sun ${w.startDateStr.slice(0, 5)}`, x, plotY + plotH + 20);
-      });
+          ctx.fillStyle = '#475569';
+          ctx.font = '11px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+          ctx.fillText(`Sun ${w.startDateStr.slice(0, 5)}`, x, plotY + plotH + 20);
+        });
+      }
     }
 
     // Legend & Footer
@@ -473,121 +487,146 @@ export const HistoricReports: React.FC<HistoricReportsProps> = ({
 
         {/* Chart Visual Container */}
         {viewMode === 'day' ? (
-          <div className="pt-6 pb-2">
-            <div className="h-64 flex items-end gap-2 sm:gap-3 border-b border-slate-200 dark:border-slate-800 px-2 overflow-x-auto">
-              {chartDays.map((d) => {
-                const isSelected = d.dateKey === selectedDayKey;
-                const baselinePercent = Math.min(100, (d.baselineInfusedMl / dayMaxVal) * 100);
-                const extraPercent = Math.min(100, (d.extraDosesMl / dayMaxVal) * 100);
+          chartDays.length === 0 ? (
+            <div className="py-12 px-4 text-center space-y-2 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl my-4">
+              <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                No Completed Historic Days Yet
+              </p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
+                Historic reporting archives completed days at midnight (00:00). As you continue infusion therapy today, your first completed daily record will appear here tomorrow morning.
+              </p>
+              <p className="text-xs text-sky-600 dark:text-sky-400 font-medium pt-1">
+                Tip: You can switch to <strong>Test Mode</strong> in Settings to explore charts and reports with simulated clinical data.
+              </p>
+            </div>
+          ) : (
+            <div className="pt-6 pb-2">
+              <div className="h-64 flex items-end gap-2 sm:gap-3 border-b border-slate-200 dark:border-slate-800 px-2 overflow-x-auto">
+                {chartDays.map((d) => {
+                  const isSelected = d.dateKey === selectedDayKey;
+                  const baselinePercent = Math.min(100, (d.baselineInfusedMl / dayMaxVal) * 100);
+                  const extraPercent = Math.min(100, (d.extraDosesMl / dayMaxVal) * 100);
 
-                return (
-                  <button
-                    key={d.dateKey}
-                    onClick={() => setSelectedDayKey(d.dateKey)}
-                    className="flex-1 min-w-[36px] flex flex-col items-center h-full justify-end group cursor-pointer"
-                  >
-                    {/* Hover/Selected Total label */}
-                    <span
-                      className={`text-[10px] font-mono font-bold mb-1 tabular-nums transition-opacity ${
-                        isSelected ? 'text-sky-600 dark:text-sky-400 opacity-100' : 'text-slate-400 opacity-80 group-hover:opacity-100'
-                      }`}
+                  return (
+                    <button
+                      key={d.dateKey}
+                      onClick={() => setSelectedDayKey(d.dateKey)}
+                      className="flex-1 min-w-[36px] flex flex-col items-center h-full justify-end group cursor-pointer"
                     >
-                      {d.totalInfusedMl.toFixed(1)}
-                    </span>
+                      {/* Hover/Selected Total label */}
+                      <span
+                        className={`text-[10px] font-mono font-bold mb-1 tabular-nums transition-opacity ${
+                          isSelected ? 'text-sky-600 dark:text-sky-400 opacity-100' : 'text-slate-400 opacity-80 group-hover:opacity-100'
+                        }`}
+                      >
+                        {d.totalInfusedMl.toFixed(1)}
+                      </span>
 
-                    {/* Stacked bar */}
-                    <div
-                      className={`w-full max-w-[38px] rounded-t-md flex flex-col justify-end overflow-hidden transition-all ${
-                        isSelected
-                          ? 'ring-2 ring-sky-500 ring-offset-2 dark:ring-offset-slate-900 shadow-md'
-                          : 'opacity-85 hover:opacity-100'
-                      }`}
-                    >
-                      {extraPercent > 0 && (
-                        <div
-                          className="w-full bg-amber-500"
-                          style={{height: `${extraPercent}%`}}
-                          title={`Extra doses: ${d.extraDosesMl.toFixed(2)} ml (${d.extraDoseCount} boluses)`}
-                        />
-                      )}
+                      {/* Stacked bar */}
                       <div
-                        className="w-full bg-sky-600"
-                        style={{height: `${baselinePercent}%`}}
-                        title={`Baseline continuous: ${d.baselineInfusedMl.toFixed(2)} ml`}
-                      />
-                    </div>
+                        className={`w-full max-w-[38px] rounded-t-md flex flex-col justify-end overflow-hidden transition-all ${
+                          isSelected
+                            ? 'ring-2 ring-sky-500 ring-offset-2 dark:ring-offset-slate-900 shadow-md'
+                            : 'opacity-85 hover:opacity-100'
+                        }`}
+                      >
+                        {extraPercent > 0 && (
+                          <div
+                            className="w-full bg-amber-500"
+                            style={{height: `${extraPercent}%`}}
+                            title={`Extra doses: ${d.extraDosesMl.toFixed(2)} ml (${d.extraDoseCount} boluses)`}
+                          />
+                        )}
+                        <div
+                          className="w-full bg-sky-600"
+                          style={{height: `${baselinePercent}%`}}
+                          title={`Baseline continuous: ${d.baselineInfusedMl.toFixed(2)} ml`}
+                        />
+                      </div>
 
-                    {/* Date label */}
-                    <span
-                      className={`mt-2 text-[10px] font-mono tabular-nums whitespace-nowrap ${
-                        isSelected
-                          ? 'font-bold text-sky-700 dark:text-sky-300'
-                          : 'text-slate-500 dark:text-slate-400'
-                      }`}
-                    >
-                      {d.dateStr.slice(0, 5)}
-                    </span>
-                  </button>
-                );
-              })}
+                      {/* Date label */}
+                      <span
+                        className={`mt-2 text-[10px] font-mono tabular-nums whitespace-nowrap ${
+                          isSelected
+                            ? 'font-bold text-sky-700 dark:text-sky-300'
+                            : 'text-slate-500 dark:text-slate-400'
+                        }`}
+                      >
+                        {d.dateStr.slice(0, 5)}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-[11px] text-slate-400 text-center mt-2">
+                Tap any date bar to view its full clinical log below.
+              </p>
             </div>
-            <p className="text-[11px] text-slate-400 text-center mt-2">
-              Tap any date bar to view its full clinical log below.
-            </p>
-          </div>
+          )
         ) : (
-          <div className="pt-6 pb-2">
-            <div className="h-64 flex items-end gap-3 sm:gap-4 border-b border-slate-200 dark:border-slate-800 px-2 overflow-x-auto">
-              {chartWeeks.map((w, idx) => {
-                const isSelected = idx === selectedWeekIndex;
-                const totalPercent = Math.min(100, (w.totalInfusedMl / weekMaxVal) * 100);
-
-                return (
-                  <button
-                    key={w.startDateStr}
-                    onClick={() => setSelectedWeekIndex(idx)}
-                    className="flex-1 min-w-[50px] flex flex-col items-center h-full justify-end group cursor-pointer"
-                  >
-                    <span
-                      className={`text-[10px] font-mono font-bold mb-1 tabular-nums transition-opacity ${
-                        isSelected ? 'text-sky-600 dark:text-sky-400 opacity-100' : 'text-slate-400 opacity-80 group-hover:opacity-100'
-                      }`}
-                    >
-                      {w.totalInfusedMl.toFixed(1)} ml
-                    </span>
-
-                    <div
-                      className={`w-full max-w-[48px] rounded-t-md bg-sky-600 transition-all ${
-                        isSelected
-                          ? 'ring-2 ring-sky-500 ring-offset-2 dark:ring-offset-slate-900 shadow-md'
-                          : 'opacity-85 hover:opacity-100'
-                      }`}
-                      style={{height: `${totalPercent}%`}}
-                      title={`${w.weekLabel}: ${w.totalInfusedMl.toFixed(2)} ml`}
-                    />
-
-                    <span
-                      className={`mt-2 text-[10px] font-mono tabular-nums whitespace-nowrap ${
-                        isSelected
-                          ? 'font-bold text-sky-700 dark:text-sky-300'
-                          : 'text-slate-500 dark:text-slate-400'
-                      }`}
-                    >
-                      Sun {w.startDateStr.slice(0, 5)}
-                    </span>
-                  </button>
-                );
-              })}
+          chartWeeks.length === 0 ? (
+            <div className="py-12 px-4 text-center space-y-2 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl my-4">
+              <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                No Completed Weekly Records Yet
+              </p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
+                Weeks strictly start on Sunday. Once full days are logged, weekly rollup averages and totals will calculate here automatically.
+              </p>
             </div>
-            <p className="text-[11px] text-slate-400 text-center mt-2">
-              Weeks strictly begin on Sunday in compliance with clinical scheduling.
-            </p>
-          </div>
+          ) : (
+            <div className="pt-6 pb-2">
+              <div className="h-64 flex items-end gap-3 sm:gap-4 border-b border-slate-200 dark:border-slate-800 px-2 overflow-x-auto">
+                {chartWeeks.map((w, idx) => {
+                  const isSelected = idx === selectedWeekIndex;
+                  const totalPercent = Math.min(100, (w.totalInfusedMl / weekMaxVal) * 100);
+
+                  return (
+                    <button
+                      key={w.startDateStr}
+                      onClick={() => setSelectedWeekIndex(idx)}
+                      className="flex-1 min-w-[50px] flex flex-col items-center h-full justify-end group cursor-pointer"
+                    >
+                      <span
+                        className={`text-[10px] font-mono font-bold mb-1 tabular-nums transition-opacity ${
+                          isSelected ? 'text-sky-600 dark:text-sky-400 opacity-100' : 'text-slate-400 opacity-80 group-hover:opacity-100'
+                        }`}
+                      >
+                        {w.totalInfusedMl.toFixed(1)} ml
+                      </span>
+
+                      <div
+                        className={`w-full max-w-[48px] rounded-t-md bg-sky-600 transition-all ${
+                          isSelected
+                            ? 'ring-2 ring-sky-500 ring-offset-2 dark:ring-offset-slate-900 shadow-md'
+                            : 'opacity-85 hover:opacity-100'
+                        }`}
+                        style={{height: `${totalPercent}%`}}
+                        title={`${w.weekLabel}: ${w.totalInfusedMl.toFixed(2)} ml`}
+                      />
+
+                      <span
+                        className={`mt-2 text-[10px] font-mono tabular-nums whitespace-nowrap ${
+                          isSelected
+                            ? 'font-bold text-sky-700 dark:text-sky-300'
+                            : 'text-slate-500 dark:text-slate-400'
+                        }`}
+                      >
+                        Sun {w.startDateStr.slice(0, 5)}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-[11px] text-slate-400 text-center mt-2">
+                Weeks strictly begin on Sunday in compliance with clinical scheduling.
+              </p>
+            </div>
+          )
         )}
       </div>
 
       {/* Selected Day Clinical Log Table & Breakdown */}
-      {selectedDayRecord && (
+      {selectedDayRecord ? (
         <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-center gap-2">
@@ -723,7 +762,7 @@ export const HistoricReports: React.FC<HistoricReportsProps> = ({
             </div>
           )}
         </div>
-      )}
+      ) : null}
     </div>
   );
 };

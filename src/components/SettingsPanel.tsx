@@ -6,18 +6,33 @@
 import React, {useState} from 'react';
 import {RateSettings} from '../types/produodopa';
 import {DEFAULT_SETTINGS} from '../services/storage';
-import {Sliders, Save, RotateCcw, Check, Info, ShieldCheck} from 'lucide-react';
+import {
+  Sliders,
+  Save,
+  RotateCcw,
+  Check,
+  ShieldCheck,
+  FlaskConical,
+  AlertTriangle,
+  RefreshCw,
+} from 'lucide-react';
 
 interface SettingsPanelProps {
   settings: RateSettings;
+  isTestMode: boolean;
   onSaveSettings: (newSettings: RateSettings) => void;
-  onResetData: () => void;
+  onToggleTestMode: (enabled: boolean) => void;
+  onResetTestData: () => void;
+  onResetRealData: () => void;
 }
 
 export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   settings,
+  isTestMode,
   onSaveSettings,
-  onResetData,
+  onToggleTestMode,
+  onResetTestData,
+  onResetRealData,
 }) => {
   const [lowRate, setLowRate] = useState<string>(settings.lowRate.toString());
   const [baseRate, setBaseRate] = useState<string>(settings.baseRate.toString());
@@ -31,6 +46,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   );
 
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [modeSuccess, setModeSuccess] = useState<string | null>(null);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -71,8 +87,132 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     setTimeout(() => setSavedSuccess(false), 3000);
   };
 
+  const handleModeToggle = (enableTest: boolean) => {
+    if (enableTest) {
+      const confirmEnter = window.confirm(
+        'Switch to Test Mode: Your current real patient data will be saved. The app will switch to simulated test data so you can test and explore charts and logs. Continue?'
+      );
+      if (!confirmEnter) return;
+      onToggleTestMode(true);
+      setModeSuccess('Switched to Test Mode with simulated clinical data.');
+    } else {
+      const confirmExit = window.confirm(
+        'Exit Test Mode: The app will resume with your real patient data. Continue?'
+      );
+      if (!confirmExit) return;
+      onToggleTestMode(false);
+      setModeSuccess('Exited Test Mode. Resumed with real patient data.');
+    }
+    setTimeout(() => setModeSuccess(null), 4000);
+  };
+
+  const handleResetReal = () => {
+    const confirmClean = window.confirm(
+      'Reset Real Data to First Use: This will set a full syringe (10.0 ml), clear all logs, and place the pump in a "Stopped" state. Proceed?'
+    );
+    if (!confirmClean) return;
+    onResetRealData();
+    setModeSuccess('Real data reset to deployment state: full syringe, 0 logs, stopped state.');
+    setTimeout(() => setModeSuccess(null), 4000);
+  };
+
   return (
     <div className="max-w-3xl mx-auto space-y-6">
+      {/* Test Mode Switch Panel */}
+      <div
+        className={`rounded-2xl border p-6 shadow-sm space-y-4 transition-colors ${
+          isTestMode
+            ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-800'
+            : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800'
+        }`}
+      >
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <FlaskConical
+              className={`w-5 h-5 ${
+                isTestMode ? 'text-amber-600 dark:text-amber-400' : 'text-slate-700 dark:text-slate-300'
+              }`}
+            />
+            <div>
+              <h2 className="text-base font-bold text-slate-900 dark:text-white">
+                Application Mode (Real Data vs Test Mode)
+              </h2>
+              <span className="text-xs text-slate-500 dark:text-slate-400">
+                Switch between real patient therapy records and simulated clinical test data
+              </span>
+            </div>
+          </div>
+
+          {/* Current State Badge */}
+          <span
+            className={`self-start sm:self-auto text-xs font-bold px-3 py-1 rounded-full whitespace-nowrap ${
+              isTestMode
+                ? 'bg-amber-500 text-white shadow-xs'
+                : 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
+            }`}
+          >
+            {isTestMode ? 'Test Mode (Simulated Data)' : 'Real Patient Mode'}
+          </span>
+        </div>
+
+        {/* Test Mode Explanation */}
+        <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+          {isTestMode
+            ? 'Test Mode is currently ACTIVE. The app is loaded with simulated historical logs, cannula aging, and rate changes for training and demonstration. When you switch out of test mode, your real patient data will safely resume exactly where it was.'
+            : 'The app is currently tracking REAL patient data. Switching to Test Mode will update and save your real data, then load simulated test logs so you can explore charts and features without altering real therapy history.'}
+        </p>
+
+        {/* Mode Toggle Controls */}
+        <div className="flex flex-wrap items-center gap-3 pt-1">
+          {isTestMode ? (
+            <button
+              onClick={() => handleModeToggle(false)}
+              className="min-h-[48px] px-5 py-2.5 rounded-xl font-bold text-sm text-white bg-slate-900 hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100 transition-all flex items-center gap-2 shadow-sm cursor-pointer"
+            >
+              <RotateCcw className="w-4 h-4" />
+              <span>Exit Test Mode & Resume Real Data</span>
+            </button>
+          ) : (
+            <button
+              onClick={() => handleModeToggle(true)}
+              className="min-h-[48px] px-5 py-2.5 rounded-xl font-bold text-sm text-amber-950 bg-amber-400 hover:bg-amber-300 transition-all flex items-center gap-2 shadow-sm cursor-pointer"
+            >
+              <FlaskConical className="w-4 h-4" />
+              <span>Switch to Test Mode (Simulated Data)</span>
+            </button>
+          )}
+
+          {isTestMode && (
+            <button
+              onClick={onResetTestData}
+              className="min-h-[48px] px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-200 bg-white/80 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:bg-white transition-all flex items-center gap-1.5 cursor-pointer"
+              title="Reset the simulated test scenario data"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>Reload Sample Test Scenario</span>
+            </button>
+          )}
+
+          {!isTestMode && (
+            <button
+              onClick={handleResetReal}
+              className="min-h-[48px] px-4 py-2.5 rounded-xl text-xs font-semibold text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 hover:bg-rose-100 transition-all flex items-center gap-1.5 cursor-pointer ml-auto"
+              title="Clear all real logs and restart with a clean deployment state"
+            >
+              <span>Reset Real Data to First Use</span>
+            </button>
+          )}
+        </div>
+
+        {modeSuccess && (
+          <div className="text-xs font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 p-2.5 rounded-lg border border-emerald-200 dark:border-emerald-800 flex items-center gap-1.5 animate-fade-in">
+            <Check className="w-4 h-4 shrink-0" />
+            <span>{modeSuccess}</span>
+          </div>
+        )}
+      </div>
+
+      {/* Therapy Settings & Rates */}
       <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm space-y-6">
         <div>
           <div className="flex items-center gap-2">

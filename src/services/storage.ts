@@ -12,14 +12,20 @@ import {
   formatDDMMYYYY,
   format24HourTime,
   toDateKey,
-  isSameDay,
 } from '../types/produodopa';
 
 const STORAGE_KEYS = {
-  SETTINGS: 'produodopa_settings_v1',
-  PUMP_STATE: 'produodopa_pump_state_v1',
-  EVENTS: 'produodopa_events_v1',
-  INITIALIZED: 'produodopa_initialized_v1',
+  IS_TEST_MODE: 'produodopa_is_test_mode_v2',
+  // Real data keys
+  REAL_SETTINGS: 'produodopa_real_settings_v2',
+  REAL_PUMP_STATE: 'produodopa_real_pump_state_v2',
+  REAL_EVENTS: 'produodopa_real_events_v2',
+  REAL_INITIALIZED: 'produodopa_real_initialized_v2',
+  // Test data keys
+  TEST_SETTINGS: 'produodopa_test_settings_v2',
+  TEST_PUMP_STATE: 'produodopa_test_pump_state_v2',
+  TEST_EVENTS: 'produodopa_test_events_v2',
+  TEST_INITIALIZED: 'produodopa_test_initialized_v2',
 };
 
 export const DEFAULT_SETTINGS: RateSettings = {
@@ -30,9 +36,167 @@ export const DEFAULT_SETTINGS: RateSettings = {
   extraDoseWaitHours: 2, // minimum 2h, max 8h
 };
 
-export function loadSettings(): RateSettings {
+/**
+ * Returns fresh real pump state at first deployment:
+ * - Full syringe (10 ml, 0 ml consumed)
+ * - Stopped state (isRunning: false)
+ * - Fresh cannula (0h elapsed, Day 1)
+ */
+export function generateDefaultRealPumpState(): PumpState {
+  const nowIso = new Date().toISOString();
+  return {
+    isRunning: false, // "should be in a 'Stopped' state"
+    currentLevel: 'base',
+    currentRate: DEFAULT_SETTINGS.baseRate,
+    lastStateChange: nowIso,
+    lastSyringeChange: nowIso, // full syringe, changed right now
+    lastCannulaChange: nowIso, // day 1 fresh
+    syringeInfusedVolume: 0, // 0 consumed -> full 10.0 ml syringe
+    lastTickTimestamp: nowIso,
+  };
+}
+
+/**
+ * Returns simulated test pump state for testing:
+ * - Running state
+ * - Partially consumed syringe (e.g. 3.2 ml consumed, 6.8 ml remaining)
+ * - Cannula in Day 2 (e.g. 28h in use)
+ */
+export function generateDefaultTestPumpState(): PumpState {
+  const now = new Date();
+  const syringeChange = new Date(now.getTime() - 9.4 * 3600 * 1000); // 9.4h ago
+  const cannulaChange = new Date(now.getTime() - 28 * 3600 * 1000); // 28h ago (Day 2 Orange)
+
+  return {
+    isRunning: true,
+    currentLevel: 'base',
+    currentRate: DEFAULT_SETTINGS.baseRate,
+    lastStateChange: new Date(now.getTime() - 4 * 3600 * 1000).toISOString(),
+    lastSyringeChange: syringeChange.toISOString(),
+    lastCannulaChange: cannulaChange.toISOString(),
+    syringeInfusedVolume: 3.2, // 6.8 ml remaining
+    lastTickTimestamp: now.toISOString(),
+  };
+}
+
+/**
+ * Generates simulated test events for the past 14 days for test mode.
+ */
+export function generateTestEvents(): LogEvent[] {
+  const events: LogEvent[] = [];
+  const now = new Date();
+
+  for (let daysAgo = 14; daysAgo >= 1; daysAgo--) {
+    const dayDate = new Date(now.getTime() - daysAgo * 24 * 3600 * 1000);
+
+    // Morning syringe change around 08:00
+    const syringeTime = new Date(dayDate);
+    syringeTime.setHours(8, 0, 0, 0);
+    events.push({
+      id: `test_syr_${daysAgo}`,
+      timestamp: syringeTime.toISOString(),
+      effectiveTime: syringeTime.toISOString(),
+      type: 'syringe_change',
+      details: {
+        syringeCapacity: 10,
+      },
+    });
+
+    // Morning base rate confirmation
+    events.push({
+      id: `test_rate_am_${daysAgo}`,
+      timestamp: syringeTime.toISOString(),
+      effectiveTime: syringeTime.toISOString(),
+      type: 'rate_change',
+      details: {
+        rateLevel: 'base',
+        rateValue: 0.34,
+      },
+    });
+
+    // Cannula change every 2-3 days
+    if (daysAgo % 3 === 0) {
+      const cannulaTime = new Date(dayDate);
+      cannulaTime.setHours(8, 15, 0, 0);
+      events.push({
+        id: `test_can_${daysAgo}`,
+        timestamp: cannulaTime.toISOString(),
+        effectiveTime: cannulaTime.toISOString(),
+        type: 'cannula_change',
+        details: {
+          cannulaDay: 1,
+        },
+      });
+    }
+
+    // Midday note or ON/OFF event
+    const middayTime = new Date(dayDate);
+    middayTime.setHours(12, 30, 0, 0);
+    const isOnDay = daysAgo % 2 === 0;
+    events.push({
+      id: `test_note_${daysAgo}`,
+      timestamp: middayTime.toISOString(),
+      effectiveTime: middayTime.toISOString(),
+      type: 'symptom_note',
+      details: {
+        noteText: isOnDay
+          ? 'Good motor control following lunch. Fluid gait observed.'
+          : 'Moderate stiffness in legs before afternoon rest.',
+        onOffStatus: isOnDay ? 'ON' : 'OFF',
+      },
+    });
+
+    // Afternoon extra dose on days with OFF or stiffness
+    if (!isOnDay || daysAgo % 3 === 1) {
+      const doseTime = new Date(dayDate);
+      doseTime.setHours(14, 0, 0, 0);
+      events.push({
+        id: `test_dose_${daysAgo}`,
+        timestamp: doseTime.toISOString(),
+        effectiveTime: doseTime.toISOString(),
+        type: 'extra_dose',
+        details: {
+          doseAmount: 0.17,
+        },
+      });
+    }
+
+    // Evening rate adjustment
+    if (daysAgo % 4 === 0) {
+      const eveningTime = new Date(dayDate);
+      eveningTime.setHours(19, 0, 0, 0);
+      events.push({
+        id: `test_rate_pm_${daysAgo}`,
+        timestamp: eveningTime.toISOString(),
+        effectiveTime: eveningTime.toISOString(),
+        type: 'rate_change',
+        details: {
+          rateLevel: 'high',
+          rateValue: 0.48,
+          previousRateLevel: 'base',
+          previousRateValue: 0.34,
+        },
+      });
+    }
+  }
+
+  return events;
+}
+
+// Test mode flag
+export function isTestModeActive(): boolean {
+  return localStorage.getItem(STORAGE_KEYS.IS_TEST_MODE) === 'true';
+}
+
+export function setTestModeActive(active: boolean): void {
+  localStorage.setItem(STORAGE_KEYS.IS_TEST_MODE, active ? 'true' : 'false');
+}
+
+// Load settings based on mode
+export function loadCurrentSettings(isTest: boolean): RateSettings {
+  const key = isTest ? STORAGE_KEYS.TEST_SETTINGS : STORAGE_KEYS.REAL_SETTINGS;
   try {
-    const raw = localStorage.getItem(STORAGE_KEYS.SETTINGS);
+    const raw = localStorage.getItem(key);
     if (!raw) return DEFAULT_SETTINGS;
     const parsed = JSON.parse(raw);
     return {
@@ -47,79 +211,160 @@ export function loadSettings(): RateSettings {
   }
 }
 
-export function saveSettings(settings: RateSettings): void {
-  localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
+export function saveCurrentSettings(settings: RateSettings, isTest: boolean): void {
+  const key = isTest ? STORAGE_KEYS.TEST_SETTINGS : STORAGE_KEYS.REAL_SETTINGS;
+  localStorage.setItem(key, JSON.stringify(settings));
 }
 
-export function loadPumpState(): PumpState {
-  const now = new Date();
-  const defaultState: PumpState = {
-    isRunning: true,
-    currentLevel: 'base',
-    currentRate: DEFAULT_SETTINGS.baseRate,
-    lastStateChange: now.toISOString(),
-    // Default syringe changed 6 hours ago
-    lastSyringeChange: new Date(now.getTime() - 6 * 3600 * 1000).toISOString(),
-    // Default cannula changed 18 hours ago (Day 1)
-    lastCannulaChange: new Date(now.getTime() - 18 * 3600 * 1000).toISOString(),
-    syringeInfusedVolume: 6 * DEFAULT_SETTINGS.baseRate, // ~2.04 ml consumed
-    lastTickTimestamp: now.toISOString(),
-  };
-
+// Load pump state based on mode
+export function loadCurrentPumpState(isTest: boolean): PumpState {
+  const key = isTest ? STORAGE_KEYS.TEST_PUMP_STATE : STORAGE_KEYS.REAL_PUMP_STATE;
   try {
-    const raw = localStorage.getItem(STORAGE_KEYS.PUMP_STATE);
-    if (!raw) return defaultState;
+    const raw = localStorage.getItem(key);
+    if (!raw) {
+      return isTest ? generateDefaultTestPumpState() : generateDefaultRealPumpState();
+    }
     const parsed = JSON.parse(raw);
-    return {
-      ...defaultState,
-      ...parsed,
-    };
+    return parsed;
   } catch {
-    return defaultState;
+    return isTest ? generateDefaultTestPumpState() : generateDefaultRealPumpState();
   }
 }
 
-export function savePumpState(state: PumpState): void {
-  localStorage.setItem(STORAGE_KEYS.PUMP_STATE, JSON.stringify(state));
+export function saveCurrentPumpState(state: PumpState, isTest: boolean): void {
+  const key = isTest ? STORAGE_KEYS.TEST_PUMP_STATE : STORAGE_KEYS.REAL_PUMP_STATE;
+  localStorage.setItem(key, JSON.stringify(state));
 }
 
-export function loadAllEvents(): LogEvent[] {
+// Load events based on mode
+export function loadCurrentEvents(isTest: boolean): LogEvent[] {
+  const key = isTest ? STORAGE_KEYS.TEST_EVENTS : STORAGE_KEYS.REAL_EVENTS;
   try {
-    const raw = localStorage.getItem(STORAGE_KEYS.EVENTS);
-    if (!raw) return [];
+    const raw = localStorage.getItem(key);
+    if (!raw) {
+      if (isTest) {
+        // Initialize test data once
+        const testEvents = generateTestEvents();
+        localStorage.setItem(STORAGE_KEYS.TEST_EVENTS, JSON.stringify(testEvents));
+        return testEvents;
+      }
+      // Real data starts with no historic data
+      return [];
+    }
     const list: LogEvent[] = JSON.parse(raw);
     return list;
   } catch {
-    return [];
+    return isTest ? generateTestEvents() : [];
   }
 }
 
-export function saveAllEvents(events: LogEvent[]): void {
-  // Prune any records prior to the maximum ninety (90) days
+export function saveCurrentEvents(events: LogEvent[], isTest: boolean): void {
+  const key = isTest ? STORAGE_KEYS.TEST_EVENTS : STORAGE_KEYS.REAL_EVENTS;
+  // Prune records older than 90 days
   const now = new Date();
   const cutoffTime = now.getTime() - 90 * 24 * 3600 * 1000;
-
   const pruned = events.filter((ev) => {
     const evTime = new Date(ev.timestamp).getTime();
     return evTime >= cutoffTime;
   });
-
-  localStorage.setItem(STORAGE_KEYS.EVENTS, JSON.stringify(pruned));
-}
-
-export function addEvent(event: LogEvent): LogEvent[] {
-  const events = loadAllEvents();
-  const updated = [event, ...events];
-  saveAllEvents(updated);
-  return updated;
+  localStorage.setItem(key, JSON.stringify(pruned));
 }
 
 /**
- * Prunes events strictly older than 90 days from local storage.
+ * Cleanly switch mode between Real and Test data.
+ * Requirement:
+ * "When switching to test mode the current state of the real data should be updated and when switching out of test mode the pump should resume with the real data."
  */
-export function pruneOldRecords(): void {
-  const events = loadAllEvents();
-  saveAllEvents(events);
+export function switchMode(
+  toTest: boolean,
+  currentPumpState: PumpState,
+  currentEvents: LogEvent[],
+  currentSettings: RateSettings
+): {
+  newPumpState: PumpState;
+  newEvents: LogEvent[];
+  newSettings: RateSettings;
+} {
+  if (toTest) {
+    // 1. Save the CURRENT REAL data before switching
+    saveCurrentPumpState(currentPumpState, false);
+    saveCurrentEvents(currentEvents, false);
+    saveCurrentSettings(currentSettings, false);
+    setTestModeActive(true);
+
+    // 2. Load or seed test data
+    let testPumpState = loadCurrentPumpState(true);
+    let testEvents = loadCurrentEvents(true);
+    let testSettings = loadCurrentSettings(true);
+
+    // If test events are empty, generate fresh test dataset
+    if (testEvents.length === 0) {
+      testEvents = generateTestEvents();
+      saveCurrentEvents(testEvents, true);
+    }
+
+    return {
+      newPumpState: testPumpState,
+      newEvents: testEvents,
+      newSettings: testSettings,
+    };
+  } else {
+    // 1. Save current test state
+    saveCurrentPumpState(currentPumpState, true);
+    saveCurrentEvents(currentEvents, true);
+    saveCurrentSettings(currentSettings, true);
+    setTestModeActive(false);
+
+    // 2. Resume with real data
+    const realPumpState = loadCurrentPumpState(false);
+    const realEvents = loadCurrentEvents(false);
+    const realSettings = loadCurrentSettings(false);
+
+    return {
+      newPumpState: realPumpState,
+      newEvents: realEvents,
+      newSettings: realSettings,
+    };
+  }
+}
+
+/**
+ * Resets test data to fresh simulation dataset.
+ */
+export function resetTestScenario(): {
+  pumpState: PumpState;
+  events: LogEvent[];
+  settings: RateSettings;
+} {
+  const pumpState = generateDefaultTestPumpState();
+  const events = generateTestEvents();
+  const settings = DEFAULT_SETTINGS;
+
+  saveCurrentPumpState(pumpState, true);
+  saveCurrentEvents(events, true);
+  saveCurrentSettings(settings, true);
+
+  return {pumpState, events, settings};
+}
+
+/**
+ * Resets real data back to first-use baseline:
+ * Full syringe (10 ml), stopped state, no historic data.
+ */
+export function resetRealDataToFirstUse(): {
+  pumpState: PumpState;
+  events: LogEvent[];
+  settings: RateSettings;
+} {
+  const pumpState = generateDefaultRealPumpState();
+  const events: LogEvent[] = [];
+  const settings = DEFAULT_SETTINGS;
+
+  saveCurrentPumpState(pumpState, false);
+  saveCurrentEvents(events, false);
+  saveCurrentSettings(settings, false);
+
+  return {pumpState, events, settings};
 }
 
 /**
@@ -207,7 +452,6 @@ export function getTodayExtraDoses(events: LogEvent[]): {
   const now = new Date();
   const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
 
-  // Filter events of type 'extra_dose' since startOfDay that have not been undone
   const undoneIds = new Set<string>();
   events.forEach((e) => {
     if (e.type === 'extra_dose_undone' && e.details.undoneEventId) {
@@ -230,7 +474,6 @@ export function getTodayExtraDoses(events: LogEvent[]): {
   let lastDoseTime: Date | null = null;
   let lastActiveEventId: string | null = null;
   if (todayExtraDoses.length > 0) {
-    // Sort descending
     todayExtraDoses.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
     lastDoseTime = new Date(todayExtraDoses[0].timestamp);
     lastActiveEventId = todayExtraDoses[0].id;
@@ -253,26 +496,10 @@ export function getHistoricDayRecords(events: LogEvent[], settings: RateSettings
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
   const ninetyDaysAgo = new Date(startOfToday.getTime() - 90 * 24 * 3600 * 1000);
 
-  // Map of dateKey -> DayUsageRecord
   const dayMap = new Map<string, DayUsageRecord>();
 
-  // Initialize previous days (up to 90 days) so every completed day is visible
-  for (let i = 1; i <= 90; i++) {
-    const d = new Date(startOfToday.getTime() - i * 24 * 3600 * 1000);
-    const key = toDateKey(d);
-    dayMap.set(key, {
-      dateStr: formatDDMMYYYY(d),
-      dateKey: key,
-      totalInfusedMl: 0,
-      baselineInfusedMl: 0,
-      extraDosesMl: 0,
-      extraDoseCount: 0,
-      runningHours: 24, // baseline assume continuous infusion
-      averageRatePerHour: 0,
-      events: [],
-    });
-  }
-
+  // Only create entries for days within the 90 days window
+  // If there are no events at all (e.g. real data at first use), dayMap will remain empty!
   const undoneIds = new Set<string>();
   events.forEach((e) => {
     if (e.type === 'extra_dose_undone' && e.details.undoneEventId) {
@@ -280,16 +507,28 @@ export function getHistoricDayRecords(events: LogEvent[], settings: RateSettings
     }
   });
 
-  // Group events into dayMap (excluding today)
+  // Collect unique days with events
   events.forEach((ev) => {
     const evDate = new Date(ev.timestamp);
     if (evDate >= startOfToday) return; // EXCLUDE CURRENT DAY
     if (evDate < ninetyDaysAgo) return; // EXCLUDE > 90 DAYS
 
     const key = toDateKey(evDate);
-    const record = dayMap.get(key);
-    if (!record) return;
+    if (!dayMap.has(key)) {
+      dayMap.set(key, {
+        dateStr: formatDDMMYYYY(evDate),
+        dateKey: key,
+        totalInfusedMl: 0,
+        baselineInfusedMl: 0,
+        extraDosesMl: 0,
+        extraDoseCount: 0,
+        runningHours: 24,
+        averageRatePerHour: 0,
+        events: [],
+      });
+    }
 
+    const record = dayMap.get(key)!;
     record.events.push(ev);
 
     if (ev.type === 'extra_dose' && !undoneIds.has(ev.id)) {
@@ -299,15 +538,11 @@ export function getHistoricDayRecords(events: LogEvent[], settings: RateSettings
     }
   });
 
-  // Calculate day totals & baseline volume
-  // For days with events, compute accurate volume. If seeded/historical, simulate realistic daily baseline
   const result: DayUsageRecord[] = [];
   dayMap.forEach((rec) => {
     rec.events.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
-    // Approximate baseline volume based on running rate or base rate (standard 24h CSCI)
     let baselineRate = settings.baseRate;
-    // Check if any rate was set that day
     for (const ev of rec.events) {
       if (ev.type === 'rate_change' && ev.details.rateValue) {
         baselineRate = ev.details.rateValue;
@@ -322,24 +557,20 @@ export function getHistoricDayRecords(events: LogEvent[], settings: RateSettings
     result.push(rec);
   });
 
-  // Sort newest completed day first
   result.sort((a, b) => b.dateKey.localeCompare(a.dateKey));
   return result;
 }
 
 /**
- * Builds week-by-week records.
- * STRICT REQUIREMENT: "week-by-week basis (week starting on a Sunday)".
+ * Builds week-by-week records (week starting Sunday).
  */
 export function getHistoricWeekRecords(dayRecords: DayUsageRecord[]): WeekUsageRecord[] {
   const weekMap = new Map<string, WeekUsageRecord>();
 
-  // dayRecords are already strictly previous completed days (within 90 days, excluding today)
   dayRecords.forEach((dayRec) => {
     const [dStr, mStr, yStr] = dayRec.dateStr.split('/');
     const d = new Date(parseInt(yStr, 10), parseInt(mStr, 10) - 1, parseInt(dStr, 10));
 
-    // Find previous or same Sunday (start of week)
     const dayOfWeek = d.getDay(); // 0 is Sunday
     const sundayDate = new Date(d);
     sundayDate.setDate(d.getDate() - dayOfWeek);
@@ -377,129 +608,16 @@ export function getHistoricWeekRecords(dayRecords: DayUsageRecord[]): WeekUsageR
     result.push(week);
   });
 
-  // Sort newest week first
   result.sort((a, b) => b.startDateStr.localeCompare(a.startDateStr));
   return result;
 }
 
 /**
- * Seeds initial 14 days of realistic Parkinson's Pro-Duodopa historical data
- * on first launch so charts, logs, weekly trends, and CSV export have immediate clinical data.
- */
-export function seedSampleDataIfEmpty(): void {
-  if (localStorage.getItem(STORAGE_KEYS.INITIALIZED)) {
-    return;
-  }
-
-  const events: LogEvent[] = [];
-  const now = new Date();
-
-  // Create events for the past 14 days
-  for (let daysAgo = 14; daysAgo >= 1; daysAgo--) {
-    const dayDate = new Date(now.getTime() - daysAgo * 24 * 3600 * 1000);
-
-    // Morning syringe change around 08:00
-    const syringeTime = new Date(dayDate);
-    syringeTime.setHours(8, 0, 0, 0);
-    events.push({
-      id: `seed_syr_${daysAgo}`,
-      timestamp: syringeTime.toISOString(),
-      effectiveTime: syringeTime.toISOString(),
-      type: 'syringe_change',
-      details: {
-        syringeCapacity: 10,
-      },
-    });
-
-    // Morning base rate confirmation
-    events.push({
-      id: `seed_rate_am_${daysAgo}`,
-      timestamp: syringeTime.toISOString(),
-      effectiveTime: syringeTime.toISOString(),
-      type: 'rate_change',
-      details: {
-        rateLevel: 'base',
-        rateValue: 0.34,
-      },
-    });
-
-    // Cannula change every 2-3 days
-    if (daysAgo % 3 === 0) {
-      const cannulaTime = new Date(dayDate);
-      cannulaTime.setHours(8, 15, 0, 0);
-      events.push({
-        id: `seed_can_${daysAgo}`,
-        timestamp: cannulaTime.toISOString(),
-        effectiveTime: cannulaTime.toISOString(),
-        type: 'cannula_change',
-        details: {
-          cannulaDay: 1,
-        },
-      });
-    }
-
-    // Midday note or ON/OFF event
-    const middayTime = new Date(dayDate);
-    middayTime.setHours(12, 30, 0, 0);
-    const isOnDay = daysAgo % 2 === 0;
-    events.push({
-      id: `seed_note_${daysAgo}`,
-      timestamp: middayTime.toISOString(),
-      effectiveTime: middayTime.toISOString(),
-      type: 'symptom_note',
-      details: {
-        noteText: isOnDay
-          ? 'Good motor response after lunch. Walking comfortably.'
-          : 'Slight stiffness and tremor in right hand before afternoon tea.',
-        onOffStatus: isOnDay ? 'ON' : 'OFF',
-      },
-    });
-
-    // Occasional afternoon extra dose on days with stiffness/OFF
-    if (!isOnDay || daysAgo % 3 === 1) {
-      const doseTime = new Date(dayDate);
-      doseTime.setHours(14, 0, 0, 0);
-      events.push({
-        id: `seed_dose_${daysAgo}`,
-        timestamp: doseTime.toISOString(),
-        effectiveTime: doseTime.toISOString(),
-        type: 'extra_dose',
-        details: {
-          doseAmount: 0.17,
-        },
-      });
-    }
-
-    // Evening high or base rate adjustment
-    if (daysAgo % 4 === 0) {
-      const eveningTime = new Date(dayDate);
-      eveningTime.setHours(19, 0, 0, 0);
-      events.push({
-        id: `seed_rate_pm_${daysAgo}`,
-        timestamp: eveningTime.toISOString(),
-        effectiveTime: eveningTime.toISOString(),
-        type: 'rate_change',
-        details: {
-          rateLevel: 'high',
-          rateValue: 0.48,
-          previousRateLevel: 'base',
-          previousRateValue: 0.34,
-        },
-      });
-    }
-  }
-
-  saveAllEvents(events);
-  localStorage.setItem(STORAGE_KEYS.INITIALIZED, 'true');
-}
-
-/**
- * Exports data to CSV file conforming strictly to DD/MM/YYYY and 24h format.
+ * Exports data to CSV file.
  */
 export function exportToCSV(events: LogEvent[], dayRecords: DayUsageRecord[]): void {
   const rows: string[] = [];
 
-  // Section 1: Daily Usage Summaries (Previous 90 days)
   rows.push('--- DAILY INFUSION SUMMARIES (PREVIOUS 90 DAYS) ---');
   rows.push('Date (DD/MM/YYYY),Total Infused (ml),Baseline (ml),Extra Doses (ml),Extra Dose Count,Average Rate (ml/h)');
   dayRecords.forEach((d) => {
@@ -512,7 +630,6 @@ export function exportToCSV(events: LogEvent[], dayRecords: DayUsageRecord[]): v
   rows.push('--- CLINICAL LOG OF EVENTS & NOTES ---');
   rows.push('Date (DD/MM/YYYY),Time (24h),Event Type,Rate Level,Rate (ml/h),Dose (ml),ON/OFF State,Notes');
 
-  // Sort events by timestamp ascending for export
   const sortedEvents = [...events].sort(
     (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
   );
