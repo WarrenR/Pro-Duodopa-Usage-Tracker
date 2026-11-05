@@ -71,17 +71,89 @@ export const CannulaGraphic: React.FC<CannulaGraphicProps> = ({
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-12 gap-5 items-center">
-        {/* Left: Cannula Asset Picture */}
+        {/* Left: Vector Subcutaneous Cannula Diagram */}
         <div className="sm:col-span-4 flex flex-col items-center justify-center p-3 rounded-xl bg-white/80 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700/60 shadow-xs">
-          <div className="relative w-28 h-28 flex items-center justify-center overflow-hidden rounded-lg">
-            <img
-              src="/public/assets/aistudio/ProDuodopa-cannula_c8f5724d.jpeg"
-              alt="Pro-Duodopa Subcutaneous Infusion Cannula"
-              className="max-h-full max-w-full object-contain select-none"
-              referrerPolicy="no-referrer"
-            />
+          <div className="relative w-28 h-28 flex items-center justify-center select-none">
+            <svg
+              viewBox="0 0 100 100"
+              className="w-24 h-24 drop-shadow-xs"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              {/* Adhesive base patch */}
+              <circle
+                cx="50"
+                cy="32"
+                r="26"
+                className="fill-slate-200 dark:fill-slate-700/70 stroke-slate-300 dark:stroke-slate-600"
+                strokeWidth="1.5"
+                strokeDasharray="2 2"
+              />
+              <circle
+                cx="50"
+                cy="32"
+                r="18"
+                className="fill-white dark:fill-slate-800 stroke-slate-300 dark:stroke-slate-600"
+                strokeWidth="1.5"
+              />
+
+              {/* Cannula Hub / Center Septum (color-coded by age) */}
+              <circle
+                cx="50"
+                cy="32"
+                r="10"
+                className={
+                  status.colorLevel === 'green'
+                    ? 'fill-emerald-500/20 stroke-emerald-600'
+                    : status.colorLevel === 'orange'
+                    ? 'fill-amber-500/20 stroke-amber-600'
+                    : 'fill-rose-500/20 stroke-rose-600'
+                }
+                strokeWidth="2"
+              />
+              <circle
+                cx="50"
+                cy="32"
+                r="4"
+                className={
+                  status.colorLevel === 'green'
+                    ? 'fill-emerald-600'
+                    : status.colorLevel === 'orange'
+                    ? 'fill-amber-600'
+                    : 'fill-rose-600'
+                }
+              />
+
+              {/* Flexible infusion line tubing curving downwards */}
+              <path
+                d="M50 38 C50 65, 30 65, 30 82"
+                className="stroke-slate-400 dark:stroke-slate-400"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                fill="none"
+              />
+
+              {/* Luer connector at tube end */}
+              <rect
+                x="26"
+                y="82"
+                width="8"
+                height="10"
+                rx="1"
+                className="fill-slate-300 dark:fill-slate-600 stroke-slate-400 dark:stroke-slate-500"
+                strokeWidth="1"
+              />
+              <line
+                x1="24"
+                y1="85"
+                x2="36"
+                y2="85"
+                className="stroke-slate-500"
+                strokeWidth="1.5"
+              />
+            </svg>
           </div>
-          <span className="mt-2 text-[11px] font-medium text-slate-500 dark:text-slate-400">
+          <span className="mt-1 text-[11px] font-semibold text-slate-600 dark:text-slate-400">
             Subcutaneous Set
           </span>
         </div>

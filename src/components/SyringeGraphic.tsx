@@ -85,46 +85,80 @@ export const SyringeGraphic: React.FC<SyringeGraphicProps> = ({
 
       {/* Syringe Visualizer & Readout */}
       <div className="grid grid-cols-1 sm:grid-cols-12 gap-5 items-center">
-        {/* Left: Real Syringe Photo & Graduated Liquid Level */}
-        <div className="sm:col-span-5 flex items-center justify-center gap-4 bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-100 dark:border-slate-800">
-          {/* Reference Photo from user upload */}
-          <div className="relative w-16 h-48 flex items-center justify-center">
-            <img
-              src="/public/assets/aistudio/ProDuodopa-syringe_926468c1.png"
-              alt="B.Braun Omnifix 10ml Pro-Duodopa Syringe"
-              className="h-full w-auto object-contain drop-shadow-sm select-none"
-              referrerPolicy="no-referrer"
-            />
-          </div>
+        {/* Left: Precision Vector Syringe Diagram */}
+        <div className="sm:col-span-5 flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-100 dark:border-slate-800">
+          <div className="flex items-center gap-4">
+            {/* Vector Syringe Graphic */}
+            <div className="relative flex flex-col items-center select-none">
+              {/* Plunger Top Flange */}
+              <div className="w-10 h-2 bg-slate-400 dark:bg-slate-500 rounded-sm shadow-xs" />
+              {/* Plunger Rod */}
+              <div className="w-2.5 h-6 bg-slate-300 dark:bg-slate-600 border-x border-slate-400 dark:border-slate-500" />
 
-          {/* Dynamic Liquid Column */}
-          <div className="flex flex-col items-center">
-            <span className="text-[11px] font-mono font-semibold text-slate-500 dark:text-slate-400 mb-1">
-              10 ml
-            </span>
-            <div className="relative w-9 h-36 bg-slate-200 dark:bg-slate-700 rounded-lg p-0.5 flex flex-col justify-end overflow-hidden border border-slate-300 dark:border-slate-600">
-              {/* Fill level */}
-              <div
-                className={`w-full rounded-md bg-gradient-to-t ${liquidColor} transition-all duration-500 relative`}
-                style={{height: `${Math.min(100, Math.max(4, percentageRemaining))}%`}}
-              >
-                {/* Meniscus wave */}
-                <div className="absolute top-0 left-0 right-0 h-1 bg-white/40 rounded-full" />
+              {/* Syringe Barrel Top Flanges */}
+              <div className="w-14 h-2.5 bg-slate-300 dark:bg-slate-600 rounded-sm border border-slate-400 dark:border-slate-500 flex justify-between px-1" />
+
+              {/* Syringe Barrel Body */}
+              <div className="relative w-11 h-44 bg-slate-100/90 dark:bg-slate-800/90 rounded-b-md border-x-2 border-b-2 border-slate-300 dark:border-slate-600 flex flex-col justify-end overflow-hidden shadow-inner">
+                {/* Fluid Fill Level */}
+                <div
+                  className={`w-full bg-gradient-to-t ${liquidColor} transition-all duration-500 relative`}
+                  style={{height: `${Math.min(100, Math.max(3, percentageRemaining))}%`}}
+                >
+                  {/* Meniscus / Rubber Stopper Line */}
+                  <div className="absolute top-0 left-0 right-0 h-1.5 bg-slate-700 dark:bg-slate-900 opacity-80" />
+                  <div className="absolute top-1.5 left-0 right-0 h-0.5 bg-white/40" />
+                </div>
+
+                {/* Graduation Scale Hash Marks (0 to 10 ml) */}
+                <div className="absolute inset-0 pointer-events-none flex flex-col justify-between py-2 px-1 text-[8px] font-mono font-bold text-slate-500 dark:text-slate-400">
+                  <div className="flex items-center justify-between">
+                    <span className="w-2.5 border-b-2 border-slate-400 dark:border-slate-500" />
+                    <span>10</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="w-1.5 border-b border-slate-400 dark:border-slate-500" />
+                    <span>8</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="w-2 border-b-2 border-slate-400 dark:border-slate-500" />
+                    <span>6</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="w-1.5 border-b border-slate-400 dark:border-slate-500" />
+                    <span>4</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="w-2 border-b-2 border-slate-400 dark:border-slate-500" />
+                    <span>2</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="w-2.5 border-b-2 border-slate-400 dark:border-slate-500" />
+                    <span>0</span>
+                  </div>
+                </div>
               </div>
 
-              {/* Graduation hash marks */}
-              <div className="absolute inset-0 pointer-events-none flex flex-col justify-between py-2 px-1 text-[8px] font-mono text-slate-600 dark:text-slate-300">
-                <span className="border-b border-slate-400 dark:border-slate-500 w-3 self-end" />
-                <span className="border-b border-slate-400 dark:border-slate-500 w-2 self-end" />
-                <span className="border-b border-slate-400 dark:border-slate-500 w-3 self-end" />
-                <span className="border-b border-slate-400 dark:border-slate-500 w-2 self-end" />
-                <span className="border-b border-slate-400 dark:border-slate-500 w-3 self-end" />
-              </div>
+              {/* Syringe Luer Nozzle Tip */}
+              <div className="w-3.5 h-3 bg-slate-300 dark:bg-slate-600 rounded-b-xs border-x border-b border-slate-400 dark:border-slate-500" />
             </div>
-            <span className="text-[11px] font-mono font-semibold text-slate-500 dark:text-slate-400 mt-1">
-              0 ml
-            </span>
+
+            {/* Quick Level Summary next to graphic */}
+            <div className="flex flex-col text-left space-y-1">
+              <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                Fluid Volume
+              </span>
+              <span className="text-xl font-bold font-mono text-slate-900 dark:text-white tabular-nums">
+                {remainingMl.toFixed(1)} ml
+              </span>
+              <span className="text-xs font-medium text-slate-500 dark:text-slate-400 tabular-nums">
+                {percentageRemaining}% full
+              </span>
+            </div>
           </div>
+          <span className="mt-2 text-[10px] font-medium text-slate-400 dark:text-slate-500">
+            10 ml Standard CSCI Syringe
+          </span>
         </div>
 
         {/* Right: Metrics & Details */}
