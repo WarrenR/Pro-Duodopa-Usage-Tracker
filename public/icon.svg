@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0284c7" />
+      <stop offset="100%" stop-color="#0369a1" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#grad)" />
+  <!-- Medical cross / droplet infusion symbol -->
+  <g fill="#ffffff">
+    <path d="M256 96 C256 96 176 216 176 296 C176 340 212 376 256 376 C300 376 336 340 336 296 C336 216 256 96 256 96 Z" opacity="0.9" />
+    <path d="M236 220 L276 220 L276 266 L322 266 L322 306 L276 306 L276 352 L236 352 L236 306 L190 306 L190 266 L236 266 Z" fill="#0284c7" />
+    <!-- Wave lines indicator -->
+    <path d="M140 420 Q200 400 256 420 T372 420" stroke="#ffffff" stroke-width="16" stroke-linecap="round" fill="none" opacity="0.8" />
+  </g>
+</svg>

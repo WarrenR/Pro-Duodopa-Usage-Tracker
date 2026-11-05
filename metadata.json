@@ -1,0 +1,6 @@
+{
+  "name": "Pro-Duodopa Tracker",
+  "description": "Infusion pump and medication tracking companion for Parkinson's disease with continuous subcutaneous Fos-levodopa/Fos-Carbidopa monitoring, syringe & cannula indicators, and 90-day clinical logs.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
