@@ -161,6 +161,20 @@ export default function App() {
     saveCurrentEvents(updated, isTestMode);
   };
 
+  // Import CSV data handler (full state reload from backup)
+  const handleImportData = (
+    newPumpState: PumpState,
+    newSettings: RateSettings,
+    newEvents: LogEvent[]
+  ) => {
+    setPumpState(newPumpState);
+    setSettings(newSettings);
+    setEvents(newEvents);
+    saveCurrentPumpState(newPumpState, isTestMode);
+    saveCurrentSettings(newSettings, isTestMode);
+    saveCurrentEvents(newEvents, isTestMode);
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col selection:bg-sky-500 selection:text-white">
       {/* Top Bar Header with Test Mode awareness */}
@@ -186,7 +200,12 @@ export default function App() {
         )}
 
         {activeTab === 'history' && (
-          <HistoricReports settings={settings} events={events} />
+          <HistoricReports
+            settings={settings}
+            pumpState={pumpState}
+            events={events}
+            onImportData={handleImportData}
+          />
         )}
 
         {activeTab === 'settings' && (

@@ -5,7 +5,7 @@
 
 import React from 'react';
 import {PWAInstallButton} from './PWAInstallButton';
-import {FlaskConical, BarChart3, Settings as SettingsIcon} from 'lucide-react';
+import {FlaskConical, History, Settings as SettingsIcon} from 'lucide-react';
 
 interface HeaderProps {
   activeTab: 'main' | 'history' | 'settings';
@@ -112,18 +112,18 @@ export const Header: React.FC<HeaderProps> = ({
               </div>
             </button>
 
-            {/* 2. Charting / Reporting icon */}
+            {/* 2. Data Log icon */}
             <button
               onClick={() => onSelectTab('history')}
-              aria-label="Historic Reports (90 Days)"
-              title="Historic Reports (90 Days)"
+              aria-label="Data Log (90 Days)"
+              title="Data Log (90 Days)"
               className={`min-h-[44px] min-w-[44px] p-2.5 rounded-xl transition-all flex items-center justify-center cursor-pointer ${
                 activeTab === 'history'
                   ? 'bg-sky-100 dark:bg-sky-950/80 text-sky-700 dark:text-sky-300 border border-sky-300 dark:border-sky-700 shadow-xs ring-2 ring-sky-400/40'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 border border-transparent'
               }`}
             >
-              <BarChart3 className="w-5 h-5 shrink-0" />
+              <History className="w-5 h-5 shrink-0" />
             </button>
 
             {/* 3. Settings cog wheel icon */}

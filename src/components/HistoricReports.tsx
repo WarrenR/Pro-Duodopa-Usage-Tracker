@@ -3,642 +3,284 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, {useState, useRef, useEffect} from 'react';
+import React, {useState, useRef} from 'react';
 import {
   RateSettings,
+  PumpState,
   LogEvent,
-  DayUsageRecord,
-  WeekUsageRecord,
   format24HourTime,
   formatDDMMYYYY,
 } from '../types/produodopa';
 import {
   getHistoricDayRecords,
-  getHistoricWeekRecords,
   exportToCSV,
+  parseImportCSV,
+  CSVImportResult,
 } from '../services/storage';
 import {
   Calendar,
-  BarChart3,
   Download,
-  Share2,
-  ChevronLeft,
-  ChevronRight,
-  TrendingUp,
-  FileSpreadsheet,
+  Upload,
   Clock,
   Droplets,
-  Layers,
-  Check,
+  Activity,
+  PlusCircle,
+  FileText,
+  Power,
+  RefreshCw,
+  CheckCircle,
+  AlertTriangle,
+  X,
 } from 'lucide-react';
 
 interface HistoricReportsProps {
   settings: RateSettings;
+  pumpState: PumpState;
   events: LogEvent[];
+  onImportData?: (newPumpState: PumpState, newSettings: RateSettings, newEvents: LogEvent[]) => void;
 }
 
 export const HistoricReports: React.FC<HistoricReportsProps> = ({
   settings,
+  pumpState,
   events,
+  onImportData,
 }) => {
-  // View mode: day-by-day or week-by-week
-  const [viewMode, setViewMode] = useState<'day' | 'week'>('day');
-
   // Compute historic records (EXCLUDES CURRENT DAY, max 90 days)
   const dayRecords = getHistoricDayRecords(events, settings);
-  const weekRecords = getHistoricWeekRecords(dayRecords);
 
-  // Selected day for log view (defaults to most recent completed day, dayRecords[0])
+  // Selected day for log view (defaults to most recent completed day)
   const [selectedDayKey, setSelectedDayKey] = useState<string>(
     dayRecords.length > 0 ? dayRecords[0].dateKey : ''
   );
 
-  // Selected week index
-  const [selectedWeekIndex, setSelectedWeekIndex] = useState<number>(0);
+  // File input ref for CSV import
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [pendingImport, setPendingImport] = useState<CSVImportResult | null>(null);
+  const [importToast, setImportToast] = useState<string | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
 
-  // Sharing status
-  const [shareFeedback, setShareFeedback] = useState<string | null>(null);
+  // Handle CSV file selection
+  const handleFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
 
-  // Canvas ref for chart sharing
-  const chartCanvasRef = useRef<HTMLCanvasElement | null>(null);
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      const result = parseImportCSV(text);
+      if (!result.success) {
+        setImportError(result.error || 'Failed to parse CSV file.');
+        setTimeout(() => setImportError(null), 6000);
+      } else {
+        setPendingImport(result);
+      }
+    };
+    reader.onerror = () => {
+      setImportError('Failed to read the selected CSV file.');
+      setTimeout(() => setImportError(null), 6000);
+    };
+    reader.readAsText(file);
+    e.target.value = ''; // reset file input
+  };
+
+  // Confirm and apply import
+  const confirmImport = () => {
+    if (!pendingImport || !pendingImport.pumpState || !pendingImport.settings || !pendingImport.events) {
+      return;
+    }
+
+    if (onImportData) {
+      onImportData(pendingImport.pumpState, pendingImport.settings, pendingImport.events);
+    }
+
+    setImportToast(
+      `Data successfully imported! Restored ${pendingImport.events.length} log events and current pump state.`
+    );
+    setPendingImport(null);
+    setTimeout(() => setImportToast(null), 6000);
+  };
 
   // Selected day record
   const selectedDayRecord =
     dayRecords.find((d) => d.dateKey === selectedDayKey) || dayRecords[0] || null;
 
-  // Selected week record
-  const selectedWeekRecord = weekRecords[selectedWeekIndex] || weekRecords[0] || null;
-
-  // Window of days to display in the day chart (last 14 completed days)
-  const chartDays = dayRecords.slice(0, 14).reverse();
-  const chartWeeks = weekRecords.slice(0, 8).reverse();
-
-  // Render chart on canvas for high-DPI image sharing & export
-  const renderChartToCanvas = (canvas: HTMLCanvasElement) => {
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const width = 1200;
-    const height = 650;
-    canvas.width = width;
-    canvas.height = height;
-
-    // Background
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, width, height);
-
-    // Header branding
-    ctx.fillStyle = '#0284c7';
-    ctx.fillRect(0, 0, width, 12);
-
-    ctx.fillStyle = '#0f172a';
-    ctx.font = 'bold 28px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-    ctx.fillText('Pro-Duodopa Infusion Therapy Log', 50, 60);
-
-    ctx.fillStyle = '#64748b';
-    ctx.font = '16px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-    const sub =
-      viewMode === 'day'
-        ? `Day-by-Day Historical Usage (Past 14 Days) · Clinical 90-Day Record`
-        : `Week-by-Week Historical Usage (Weeks Starting Sunday) · Clinical 90-Day Record`;
-    ctx.fillText(sub, 50, 90);
-
-    // Summary Metric strip in image
-    ctx.fillStyle = '#f8fafc';
-    ctx.strokeStyle = '#e2e8f0';
-    ctx.lineWidth = 1;
-    ctx.fillRect(50, 115, width - 100, 80);
-    ctx.strokeRect(50, 115, width - 100, 80);
-
-    ctx.fillStyle = '#475569';
-    ctx.font = 'bold 13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-    ctx.fillText('AVERAGE RATE PER HOUR', 75, 145);
-    ctx.fillText('TOTAL VOLUME INFUSED', 380, 145);
-    ctx.fillText('EXTRA DOSES ADMINISTERED', 700, 145);
-    ctx.fillText('RECORD RETENTION', 980, 145);
-
-    ctx.fillStyle = '#0f172a';
-    ctx.font = 'bold 22px "SF Mono", Menlo, monospace';
-
-    if (viewMode === 'day' && selectedDayRecord) {
-      ctx.fillText(`${selectedDayRecord.averageRatePerHour.toFixed(3)} ml/h`, 75, 175);
-      ctx.fillText(`${selectedDayRecord.totalInfusedMl.toFixed(2)} ml`, 380, 175);
-      ctx.fillText(`${selectedDayRecord.extraDoseCount} doses`, 700, 175);
-      ctx.fillText(`90 Days Max`, 980, 175);
-    } else if (selectedWeekRecord) {
-      ctx.fillText(`${selectedWeekRecord.averageRatePerHour.toFixed(3)} ml/h`, 75, 175);
-      ctx.fillText(`${selectedWeekRecord.totalInfusedMl.toFixed(2)} ml`, 380, 175);
-      ctx.fillText(`${selectedWeekRecord.totalExtraDoses} doses`, 700, 175);
-      ctx.fillText(`90 Days Max`, 980, 175);
-    }
-
-    // Chart plotting area
-    const plotX = 80;
-    const plotY = 240;
-    const plotW = width - 160;
-    const plotH = 310;
-
-    // Draw grid lines
-    ctx.strokeStyle = '#f1f5f9';
-    ctx.lineWidth = 1;
-    for (let i = 0; i <= 5; i++) {
-      const y = plotY + (plotH / 5) * i;
-      ctx.beginPath();
-      ctx.moveTo(plotX, y);
-      ctx.lineTo(plotX + plotW, y);
-      ctx.stroke();
-    }
-
-    // Determine max value
-    const maxVal =
-      viewMode === 'day'
-        ? Math.max(...chartDays.map((d) => d.totalInfusedMl), 10) * 1.15
-        : Math.max(...chartWeeks.map((w) => w.totalInfusedMl), 70) * 1.15;
-
-    // Y-axis labels
-    ctx.fillStyle = '#94a3b8';
-    ctx.font = '12px "SF Mono", Menlo, monospace';
-    ctx.textAlign = 'right';
-    for (let i = 0; i <= 5; i++) {
-      const y = plotY + (plotH / 5) * (5 - i);
-      const val = (maxVal / 5) * i;
-      ctx.fillText(`${val.toFixed(1)} ml`, plotX - 10, y + 4);
-    }
-
-    // Plot bars
-    ctx.textAlign = 'center';
-    if (viewMode === 'day') {
-      if (chartDays.length === 0) {
-        ctx.fillStyle = '#64748b';
-        ctx.font = 'italic 16px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-        ctx.fillText('No completed historic days recorded yet (current day will archive at midnight 00:00).', width / 2, plotY + plotH / 2);
-        ctx.fillText('Switch to Test Mode in Settings to preview historical reports with simulated clinical data.', width / 2, plotY + plotH / 2 + 30);
-      } else {
-        const barSlot = plotW / chartDays.length;
-        const barW = Math.max(20, barSlot * 0.55);
-
-        chartDays.forEach((d, idx) => {
-          const x = plotX + idx * barSlot + barSlot / 2;
-          const baselineH = (d.baselineInfusedMl / maxVal) * plotH;
-          const extraH = (d.extraDosesMl / maxVal) * plotH;
-
-          // Baseline bar (Blue)
-          ctx.fillStyle = '#0284c7';
-          ctx.fillRect(x - barW / 2, plotY + plotH - baselineH, barW, baselineH);
-
-          // Extra dose bar (Amber)
-          if (extraH > 0) {
-            ctx.fillStyle = '#f59e0b';
-            ctx.fillRect(x - barW / 2, plotY + plotH - baselineH - extraH, barW, extraH);
-          }
-
-          // Total label on top
-          ctx.fillStyle = '#0f172a';
-          ctx.font = 'bold 11px "SF Mono", Menlo, monospace';
-          ctx.fillText(`${d.totalInfusedMl.toFixed(1)}`, x, plotY + plotH - baselineH - extraH - 8);
-
-          // Date label below
-          ctx.fillStyle = '#475569';
-          ctx.font = '11px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-          const dateShort = d.dateStr.slice(0, 5); // DD/MM
-          ctx.fillText(dateShort, x, plotY + plotH + 20);
-        });
-      }
-    } else {
-      if (chartWeeks.length === 0) {
-        ctx.fillStyle = '#64748b';
-        ctx.font = 'italic 16px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-        ctx.fillText('No completed weekly records logged yet.', width / 2, plotY + plotH / 2);
-        ctx.fillText('Switch to Test Mode in Settings to preview weekly rollup charts.', width / 2, plotY + plotH / 2 + 30);
-      } else {
-        const barSlot = plotW / chartWeeks.length;
-        const barW = Math.max(30, barSlot * 0.6);
-
-        chartWeeks.forEach((w, idx) => {
-          const x = plotX + idx * barSlot + barSlot / 2;
-          const totalH = (w.totalInfusedMl / maxVal) * plotH;
-
-          ctx.fillStyle = '#0284c7';
-          ctx.fillRect(x - barW / 2, plotY + plotH - totalH, barW, totalH);
-
-          ctx.fillStyle = '#0f172a';
-          ctx.font = 'bold 12px "SF Mono", Menlo, monospace';
-          ctx.fillText(`${w.totalInfusedMl.toFixed(1)} ml`, x, plotY + plotH - totalH - 8);
-
-          ctx.fillStyle = '#475569';
-          ctx.font = '11px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-          ctx.fillText(`Sun ${w.startDateStr.slice(0, 5)}`, x, plotY + plotH + 20);
-        });
-      }
-    }
-
-    // Legend & Footer
-    ctx.textAlign = 'left';
-    ctx.fillStyle = '#0284c7';
-    ctx.fillRect(plotX, height - 40, 16, 12);
-    ctx.fillStyle = '#334155';
-    ctx.font = '12px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-    ctx.fillText('Continuous Infusion (Baseline)', plotX + 24, height - 30);
-
-    ctx.fillStyle = '#f59e0b';
-    ctx.fillRect(plotX + 240, height - 40, 16, 12);
-    ctx.fillStyle = '#334155';
-    ctx.fillText('Extra Dose Bolus', plotX + 264, height - 30);
-
-    ctx.textAlign = 'right';
-    ctx.fillStyle = '#94a3b8';
-    ctx.font = '11px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-    ctx.fillText('Generated by Pro-Duodopa Tracker · Parkinson\'s CSCI Therapy', width - 50, height - 30);
-  };
-
-  // Trigger share as image
-  const handleShareChartImage = async () => {
-    const canvas = document.createElement('canvas');
-    renderChartToCanvas(canvas);
-
-    canvas.toBlob(async (blob) => {
-      if (!blob) return;
-      const file = new File([blob], `ProDuodopa_Chart_${formatDDMMYYYY(new Date()).replace(/\//g, '_')}.png`, {
-        type: 'image/png',
-      });
-
-      // Try native Web Share API
-      if (navigator.canShare && navigator.canShare({files: [file]})) {
-        try {
-          await navigator.share({
-            title: 'Pro-Duodopa Therapy Chart',
-            text: 'Historical infusion report for Parkinson\'s therapy.',
-            files: [file],
-          });
-          setShareFeedback('Shared successfully via device!');
-          setTimeout(() => setShareFeedback(null), 3000);
-          return;
-        } catch {
-          // Fall back to download
-        }
-      }
-
-      // Fallback: download PNG image
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `ProDuodopa_Chart_${formatDDMMYYYY(new Date()).replace(/\//g, '_')}.png`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-
-      setShareFeedback('Chart image saved to downloads!');
-      setTimeout(() => setShareFeedback(null), 3000);
-    }, 'image/png');
-  };
-
-  // Calculate maximum for CSS responsive chart bars
-  const dayMaxVal = Math.max(...chartDays.map((d) => d.totalInfusedMl), 10) * 1.1;
-  const weekMaxVal = Math.max(...chartWeeks.map((w) => w.totalInfusedMl), 70) * 1.1;
-
   return (
     <div className="space-y-6">
-      {/* Top Controls: Mode Switcher, Export CSV, Share Image */}
-      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm space-y-4">
+      {/* Hidden file input for CSV Import */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        accept=".csv,text/csv"
+        onChange={handleFileSelected}
+        className="hidden"
+      />
+
+      {/* Import Success Banner */}
+      {importToast && (
+        <div className="bg-emerald-50 dark:bg-emerald-950/80 border border-emerald-300 dark:border-emerald-800 text-emerald-900 dark:text-emerald-100 p-4 rounded-xl flex items-center justify-between text-xs sm:text-sm shadow-sm animate-fade-in">
+          <div className="flex items-center gap-2">
+            <CheckCircle className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+            <span className="font-medium">{importToast}</span>
+          </div>
+          <button
+            onClick={() => setImportToast(null)}
+            className="text-emerald-700 hover:text-emerald-900 dark:text-emerald-300 p-1 cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Import Error Banner */}
+      {importError && (
+        <div className="bg-rose-50 dark:bg-rose-950/80 border border-rose-300 dark:border-rose-800 text-rose-900 dark:text-rose-100 p-4 rounded-xl flex items-center justify-between text-xs sm:text-sm shadow-sm animate-fade-in">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-5 h-5 text-rose-600 dark:text-rose-400 shrink-0" />
+            <span className="font-medium">{importError}</span>
+          </div>
+          <button
+            onClick={() => setImportError(null)}
+            className="text-rose-700 hover:text-rose-900 dark:text-rose-300 p-1 cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {/* CSV Import Confirmation Modal */}
+      {pendingImport && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 max-w-lg w-full shadow-2xl space-y-4 animate-scale-up">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <Upload className="w-5 h-5 text-sky-600 dark:text-sky-400" />
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                  Confirm CSV Data Import
+                </h3>
+              </div>
+              <button
+                onClick={() => setPendingImport(null)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+              A valid Pro-Duodopa backup file has been parsed. Importing will reload the saved therapy state, syringe volume, cannula age, and log records onto this device.
+            </p>
+
+            {/* Import Summary Details */}
+            <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 space-y-2 text-xs">
+              <div className="flex justify-between">
+                <span className="text-slate-500 dark:text-slate-400">Events in backup:</span>
+                <strong className="text-slate-900 dark:text-white font-mono">
+                  {pendingImport.events?.length || 0} records (max 90 days)
+                </strong>
+              </div>
+              {pendingImport.pumpState && (
+                <>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500 dark:text-slate-400">Pump State:</span>
+                    <strong className="text-slate-900 dark:text-white font-mono">
+                      {pendingImport.pumpState.isRunning ? 'RUNNING' : 'STOPPED'} ({pendingImport.pumpState.currentRate.toFixed(2)} ml/h)
+                    </strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500 dark:text-slate-400">Syringe Level:</span>
+                    <strong className="text-slate-900 dark:text-white font-mono">
+                      {(10 - pendingImport.pumpState.syringeInfusedVolume).toFixed(2)} ml remaining
+                    </strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500 dark:text-slate-400">Cannula Insertion:</span>
+                    <strong className="text-slate-900 dark:text-white font-mono">
+                      {formatDDMMYYYY(pendingImport.pumpState.lastCannulaChange)}
+                    </strong>
+                  </div>
+                </>
+              )}
+              {pendingImport.summary?.exportTimestamp && (
+                <div className="flex justify-between pt-1 border-t border-slate-200 dark:border-slate-700">
+                  <span className="text-slate-500 dark:text-slate-400">Backup Date:</span>
+                  <span className="text-slate-700 dark:text-slate-300 font-mono">
+                    {formatDDMMYYYY(pendingImport.summary.exportTimestamp)} at {format24HourTime(pendingImport.summary.exportTimestamp)}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setPendingImport(null)}
+                className="min-h-[44px] px-4 py-2 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-300 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmImport}
+                className="min-h-[44px] px-5 py-2 rounded-xl text-xs font-bold text-white bg-sky-600 hover:bg-sky-700 shadow-sm transition cursor-pointer"
+              >
+                Confirm Import & Restore State
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Top Header & Export / Import CSV */}
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-lg font-bold text-slate-900 dark:text-white">
-              Historic Usage & Clinical Reporting
-            </h1>
+            <div className="flex items-center gap-2">
+              <Calendar className="w-5 h-5 text-sky-600 dark:text-sky-400" />
+              <h1 className="text-lg font-bold text-slate-900 dark:text-white">
+                Data Log
+              </h1>
+            </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Excludes today · 90-day rolling clinical retention window
+              Previous 90 days audit history (excludes today) · Days archive at midnight (00:00)
             </p>
           </div>
 
-          <div className="flex items-center gap-2 flex-wrap">
-            {/* Share as Image Button */}
+          <div className="flex flex-wrap items-center gap-2.5">
+            {/* Import CSV Button */}
             <button
-              onClick={handleShareChartImage}
-              className="min-h-[44px] px-3.5 py-2 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap"
-              title="Export high-resolution chart image for clinical consultation or sharing"
+              onClick={() => fileInputRef.current?.click()}
+              className="min-h-[44px] px-4 py-2 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-300 dark:border-slate-700 flex items-center gap-2 shadow-2xs transition-all cursor-pointer whitespace-nowrap"
+              title="Load a previously exported CSV file to restore log and state on this device"
             >
-              <Share2 className="w-4 h-4 text-sky-600 dark:text-sky-400" />
-              <span>Share Chart Image</span>
+              <Upload className="w-4 h-4 text-sky-600 dark:text-sky-400" />
+              <span>Import CSV</span>
             </button>
 
             {/* Export CSV Button */}
             <button
-              onClick={() => exportToCSV(events, dayRecords)}
-              className="min-h-[44px] px-3.5 py-2 rounded-xl text-xs font-semibold text-white bg-sky-600 hover:bg-sky-700 flex items-center gap-2 shadow-sm transition-all cursor-pointer whitespace-nowrap"
-              title="Download all logs and event timestamps in CSV format"
+              onClick={() => exportToCSV(pumpState, settings, events, dayRecords)}
+              className="min-h-[44px] px-4 py-2 rounded-xl text-xs font-semibold text-white bg-sky-600 hover:bg-sky-700 flex items-center gap-2 shadow-sm transition-all cursor-pointer whitespace-nowrap"
+              title="Export all logs up to 90 days and current state data to a CSV file"
             >
               <Download className="w-4 h-4" />
               <span>Export CSV</span>
             </button>
           </div>
         </div>
-
-        {shareFeedback && (
-          <div className="text-xs font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 p-2.5 rounded-lg border border-emerald-200 dark:border-emerald-800 flex items-center gap-1.5 animate-fade-in">
-            <Check className="w-4 h-4" />
-            {shareFeedback}
-          </div>
-        )}
-
-        {/* View Mode Tabs (Day-by-Day vs Week-by-Week) */}
-        <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-800 pt-3">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-              Reporting Mode:
-            </span>
-            <div className="inline-flex p-1 bg-slate-100 dark:bg-slate-800 rounded-xl">
-              <button
-                onClick={() => setViewMode('day')}
-                className={`min-h-[38px] px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                  viewMode === 'day'
-                    ? 'bg-white dark:bg-slate-900 text-sky-700 dark:text-sky-300 shadow-xs'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                }`}
-              >
-                Day-by-Day
-              </button>
-              <button
-                onClick={() => setViewMode('week')}
-                className={`min-h-[38px] px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                  viewMode === 'week'
-                    ? 'bg-white dark:bg-slate-900 text-sky-700 dark:text-sky-300 shadow-xs'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                }`}
-              >
-                Week-by-Week (Sunday Start)
-              </button>
-            </div>
-          </div>
-
-          <span className="text-xs font-mono text-slate-500 dark:text-slate-400 tabular-nums">
-            {dayRecords.length} completed days on record
-          </span>
-        </div>
-      </div>
-
-      {/* Average Rate Per Hour & Key Metrics Summary Strip */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Metric 1: Average Rate Per Hour */}
-        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm">
-          <span className="text-xs font-medium text-slate-500 dark:text-slate-400 block">
-            Average Rate Per Hour
-          </span>
-          <div className="mt-1 flex items-baseline gap-1">
-            <span className="text-2xl font-black font-mono tracking-tight text-sky-600 dark:text-sky-400 tabular-nums">
-              {viewMode === 'day'
-                ? (selectedDayRecord?.averageRatePerHour.toFixed(3) || '0.000')
-                : (selectedWeekRecord?.averageRatePerHour.toFixed(3) || '0.000')}
-            </span>
-            <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">
-              ml/h
-            </span>
-          </div>
-          <span className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 block truncate">
-            {viewMode === 'day'
-              ? `For ${selectedDayRecord?.dateStr || 'selected day'}`
-              : `${selectedWeekRecord?.weekLabel || 'selected week'}`}
-          </span>
-        </div>
-
-        {/* Metric 2: Total Volume Infused */}
-        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm">
-          <span className="text-xs font-medium text-slate-500 dark:text-slate-400 block">
-            Total Infused Volume
-          </span>
-          <div className="mt-1 flex items-baseline gap-1">
-            <span className="text-2xl font-black font-mono tracking-tight text-slate-900 dark:text-white tabular-nums">
-              {viewMode === 'day'
-                ? (selectedDayRecord?.totalInfusedMl.toFixed(2) || '0.00')
-                : (selectedWeekRecord?.totalInfusedMl.toFixed(2) || '0.00')}
-            </span>
-            <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">
-              ml
-            </span>
-          </div>
-          <span className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 block">
-            {viewMode === 'day'
-              ? `Baseline: ${selectedDayRecord?.baselineInfusedMl.toFixed(2)} ml`
-              : `Daily average: ${selectedWeekRecord?.dailyAverageMl.toFixed(2)} ml/day`}
-          </span>
-        </div>
-
-        {/* Metric 3: Extra Doses */}
-        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm">
-          <span className="text-xs font-medium text-slate-500 dark:text-slate-400 block">
-            Extra Doses Administered
-          </span>
-          <div className="mt-1 flex items-baseline gap-1">
-            <span className="text-2xl font-black font-mono tracking-tight text-slate-900 dark:text-white tabular-nums">
-              {viewMode === 'day'
-                ? (selectedDayRecord?.extraDoseCount || 0)
-                : (selectedWeekRecord?.totalExtraDoses || 0)}
-            </span>
-            <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">
-              doses
-            </span>
-          </div>
-          <span className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 block">
-            {viewMode === 'day'
-              ? `Extra volume: ${selectedDayRecord?.extraDosesMl.toFixed(2)} ml`
-              : `Across ${selectedWeekRecord?.days.length || 0} completed days`}
-          </span>
-        </div>
-
-        {/* Metric 4: Record Range */}
-        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm">
-          <span className="text-xs font-medium text-slate-500 dark:text-slate-400 block">
-            Retention Boundary
-          </span>
-          <div className="mt-1 flex items-baseline gap-1">
-            <span className="text-2xl font-black font-mono tracking-tight text-slate-900 dark:text-white tabular-nums">
-              90 Days
-            </span>
-          </div>
-          <span className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 block">
-            Auto-pruning active
-          </span>
-        </div>
-      </div>
-
-      {/* Main Interactive Chart Section */}
-      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <BarChart3 className="w-5 h-5 text-sky-600 dark:text-sky-400" />
-            <h2 className="text-base font-semibold text-slate-900 dark:text-white">
-              {viewMode === 'day'
-                ? 'Day-by-Day Usage Chart (Past 14 Completed Days)'
-                : 'Week-by-Week Usage Chart (Week Starting Sunday)'}
-            </h2>
-          </div>
-          {/* Legend */}
-          <div className="flex items-center gap-3 text-xs">
-            <div className="flex items-center gap-1.5">
-              <span className="w-3 h-3 rounded-xs bg-sky-600" />
-              <span className="text-slate-600 dark:text-slate-400">Continuous Baseline</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="w-3 h-3 rounded-xs bg-amber-500" />
-              <span className="text-slate-600 dark:text-slate-400">Extra Dose</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Chart Visual Container */}
-        {viewMode === 'day' ? (
-          chartDays.length === 0 ? (
-            <div className="py-12 px-4 text-center space-y-2 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl my-4">
-              <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-                No Completed Historic Days Yet
-              </p>
-              <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
-                Historic reporting archives completed days at midnight (00:00). As you continue infusion therapy today, your first completed daily record will appear here tomorrow morning.
-              </p>
-              <p className="text-xs text-sky-600 dark:text-sky-400 font-medium pt-1">
-                Tip: You can switch to <strong>Test Mode</strong> in Settings to explore charts and reports with simulated clinical data.
-              </p>
-            </div>
-          ) : (
-            <div className="pt-6 pb-2">
-              <div className="h-64 flex items-end gap-2 sm:gap-3 border-b border-slate-200 dark:border-slate-800 px-2 overflow-x-auto">
-                {chartDays.map((d) => {
-                  const isSelected = d.dateKey === selectedDayKey;
-                  const baselinePercent = Math.min(100, (d.baselineInfusedMl / dayMaxVal) * 100);
-                  const extraPercent = Math.min(100, (d.extraDosesMl / dayMaxVal) * 100);
-
-                  return (
-                    <button
-                      key={d.dateKey}
-                      onClick={() => setSelectedDayKey(d.dateKey)}
-                      className="flex-1 min-w-[36px] flex flex-col items-center h-full justify-end group cursor-pointer"
-                    >
-                      {/* Hover/Selected Total label */}
-                      <span
-                        className={`text-[10px] font-mono font-bold mb-1 tabular-nums transition-opacity ${
-                          isSelected ? 'text-sky-600 dark:text-sky-400 opacity-100' : 'text-slate-400 opacity-80 group-hover:opacity-100'
-                        }`}
-                      >
-                        {d.totalInfusedMl.toFixed(1)}
-                      </span>
-
-                      {/* Stacked bar */}
-                      <div
-                        className={`w-full max-w-[38px] rounded-t-md flex flex-col justify-end overflow-hidden transition-all ${
-                          isSelected
-                            ? 'ring-2 ring-sky-500 ring-offset-2 dark:ring-offset-slate-900 shadow-md'
-                            : 'opacity-85 hover:opacity-100'
-                        }`}
-                      >
-                        {extraPercent > 0 && (
-                          <div
-                            className="w-full bg-amber-500"
-                            style={{height: `${extraPercent}%`}}
-                            title={`Extra doses: ${d.extraDosesMl.toFixed(2)} ml (${d.extraDoseCount} boluses)`}
-                          />
-                        )}
-                        <div
-                          className="w-full bg-sky-600"
-                          style={{height: `${baselinePercent}%`}}
-                          title={`Baseline continuous: ${d.baselineInfusedMl.toFixed(2)} ml`}
-                        />
-                      </div>
-
-                      {/* Date label */}
-                      <span
-                        className={`mt-2 text-[10px] font-mono tabular-nums whitespace-nowrap ${
-                          isSelected
-                            ? 'font-bold text-sky-700 dark:text-sky-300'
-                            : 'text-slate-500 dark:text-slate-400'
-                        }`}
-                      >
-                        {d.dateStr.slice(0, 5)}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-              <p className="text-[11px] text-slate-400 text-center mt-2">
-                Tap any date bar to view its full clinical log below.
-              </p>
-            </div>
-          )
-        ) : (
-          chartWeeks.length === 0 ? (
-            <div className="py-12 px-4 text-center space-y-2 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl my-4">
-              <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-                No Completed Weekly Records Yet
-              </p>
-              <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
-                Weeks strictly start on Sunday. Once full days are logged, weekly rollup averages and totals will calculate here automatically.
-              </p>
-            </div>
-          ) : (
-            <div className="pt-6 pb-2">
-              <div className="h-64 flex items-end gap-3 sm:gap-4 border-b border-slate-200 dark:border-slate-800 px-2 overflow-x-auto">
-                {chartWeeks.map((w, idx) => {
-                  const isSelected = idx === selectedWeekIndex;
-                  const totalPercent = Math.min(100, (w.totalInfusedMl / weekMaxVal) * 100);
-
-                  return (
-                    <button
-                      key={w.startDateStr}
-                      onClick={() => setSelectedWeekIndex(idx)}
-                      className="flex-1 min-w-[50px] flex flex-col items-center h-full justify-end group cursor-pointer"
-                    >
-                      <span
-                        className={`text-[10px] font-mono font-bold mb-1 tabular-nums transition-opacity ${
-                          isSelected ? 'text-sky-600 dark:text-sky-400 opacity-100' : 'text-slate-400 opacity-80 group-hover:opacity-100'
-                        }`}
-                      >
-                        {w.totalInfusedMl.toFixed(1)} ml
-                      </span>
-
-                      <div
-                        className={`w-full max-w-[48px] rounded-t-md bg-sky-600 transition-all ${
-                          isSelected
-                            ? 'ring-2 ring-sky-500 ring-offset-2 dark:ring-offset-slate-900 shadow-md'
-                            : 'opacity-85 hover:opacity-100'
-                        }`}
-                        style={{height: `${totalPercent}%`}}
-                        title={`${w.weekLabel}: ${w.totalInfusedMl.toFixed(2)} ml`}
-                      />
-
-                      <span
-                        className={`mt-2 text-[10px] font-mono tabular-nums whitespace-nowrap ${
-                          isSelected
-                            ? 'font-bold text-sky-700 dark:text-sky-300'
-                            : 'text-slate-500 dark:text-slate-400'
-                        }`}
-                      >
-                        Sun {w.startDateStr.slice(0, 5)}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-              <p className="text-[11px] text-slate-400 text-center mt-2">
-                Weeks strictly begin on Sunday in compliance with clinical scheduling.
-              </p>
-            </div>
-          )
-        )}
       </div>
 
       {/* Selected Day Clinical Log Table & Breakdown */}
       {selectedDayRecord ? (
-        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <Calendar className="w-5 h-5 text-sky-600 dark:text-sky-400" />
-              <div>
-                <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                  Day Log for {selectedDayRecord.dateStr}
-                </h3>
-                <span className="text-xs text-slate-500 dark:text-slate-400">
-                  Detailed timeline of rates, extra doses, notes, and cannula/syringe changes
-                </span>
-              </div>
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-4">
+            <div>
+              <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <span>Daily Log for {selectedDayRecord.dateStr}</span>
+              </h2>
+              <span className="text-xs text-slate-500 dark:text-slate-400">
+                Detailed timeline of rates, extra doses, notes, and cannula/syringe changes
+              </span>
             </div>
 
             {/* Day Selector Quick Dropdown */}
@@ -649,7 +291,7 @@ export const HistoricReports: React.FC<HistoricReportsProps> = ({
               <select
                 value={selectedDayRecord.dateKey}
                 onChange={(e) => setSelectedDayKey(e.target.value)}
-                className="min-h-[40px] px-3 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono font-medium text-slate-900 dark:text-white focus:border-sky-500"
+                className="min-h-[40px] px-3 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono font-medium text-slate-900 dark:text-white focus:border-sky-500 cursor-pointer"
               >
                 {dayRecords.map((d) => (
                   <option key={d.dateKey} value={d.dateKey}>
@@ -660,29 +302,29 @@ export const HistoricReports: React.FC<HistoricReportsProps> = ({
             </div>
           </div>
 
-          {/* Daily metrics summary pill strip */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 text-xs">
+          {/* Daily metrics summary strip */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 text-xs">
             <div>
               <span className="text-slate-500 dark:text-slate-400 block">Total Infused:</span>
-              <strong className="font-mono text-sm text-slate-900 dark:text-white tabular-nums">
+              <strong className="font-mono text-base text-slate-900 dark:text-white tabular-nums">
                 {selectedDayRecord.totalInfusedMl.toFixed(2)} ml
               </strong>
             </div>
             <div>
               <span className="text-slate-500 dark:text-slate-400 block">Avg Rate Per Hour:</span>
-              <strong className="font-mono text-sm text-sky-600 dark:text-sky-400 tabular-nums">
+              <strong className="font-mono text-base text-sky-600 dark:text-sky-400 tabular-nums">
                 {selectedDayRecord.averageRatePerHour.toFixed(3)} ml/h
               </strong>
             </div>
             <div>
               <span className="text-slate-500 dark:text-slate-400 block">Extra Doses:</span>
-              <strong className="font-mono text-sm text-slate-900 dark:text-white tabular-nums">
+              <strong className="font-mono text-base text-slate-900 dark:text-white tabular-nums">
                 {selectedDayRecord.extraDoseCount} ({selectedDayRecord.extraDosesMl.toFixed(2)} ml)
               </strong>
             </div>
             <div>
               <span className="text-slate-500 dark:text-slate-400 block">Logged Events:</span>
-              <strong className="font-mono text-sm text-slate-900 dark:text-white tabular-nums">
+              <strong className="font-mono text-base text-slate-900 dark:text-white tabular-nums">
                 {selectedDayRecord.events.length} entries
               </strong>
             </div>
@@ -690,7 +332,7 @@ export const HistoricReports: React.FC<HistoricReportsProps> = ({
 
           {/* Events List for Selected Day */}
           {selectedDayRecord.events.length === 0 ? (
-            <p className="text-xs text-slate-500 dark:text-slate-400 italic py-4 text-center">
+            <p className="text-xs text-slate-500 dark:text-slate-400 italic py-6 text-center">
               Continuous basal infusion running at baseline rate ({settings.baseRate.toFixed(2)} ml/h). No manual dose alterations or ad hoc notes recorded on this date.
             </p>
           ) : (
@@ -698,16 +340,17 @@ export const HistoricReports: React.FC<HistoricReportsProps> = ({
               {selectedDayRecord.events.map((ev) => {
                 const timeStr = format24HourTime(ev.effectiveTime || ev.timestamp);
                 return (
-                  <div key={ev.id} className="p-3 bg-white dark:bg-slate-900 flex items-start justify-between gap-4 text-xs">
+                  <div key={ev.id} className="p-3.5 bg-white dark:bg-slate-900 flex items-start justify-between gap-4 text-xs">
                     <div className="flex items-start gap-3">
                       <span className="font-mono font-bold text-slate-600 dark:text-slate-400 tabular-nums shrink-0 mt-0.5">
                         {timeStr}
                       </span>
-                      <div className="space-y-0.5">
+                      <div className="space-y-1">
                         {ev.type === 'rate_change' && (
-                          <div className="text-slate-900 dark:text-white font-medium">
-                            Infusion rate adjusted to{' '}
-                            <strong className="uppercase text-sky-600 dark:text-sky-400">{ev.details.rateLevel}</strong> ({ev.details.rateValue?.toFixed(2)} ml/h)
+                          <div className="text-slate-900 dark:text-white font-medium flex items-center gap-1.5">
+                            <span className="text-slate-600 dark:text-slate-400">Infusion rate adjusted to</span>
+                            <strong className="uppercase text-sky-600 dark:text-sky-400 font-bold">{ev.details.rateLevel}</strong>
+                            <span className="font-mono font-bold">({ev.details.rateValue?.toFixed(2)} ml/h)</span>
                           </div>
                         )}
                         {ev.type === 'extra_dose' && (
@@ -717,23 +360,27 @@ export const HistoricReports: React.FC<HistoricReportsProps> = ({
                           </div>
                         )}
                         {ev.type === 'syringe_change' && (
-                          <div className="text-sky-700 dark:text-sky-300 font-medium">
-                            Syringe changed (10.0 ml fresh syringe)
+                          <div className="text-sky-700 dark:text-sky-300 font-medium flex items-center gap-1.5">
+                            <RefreshCw className="w-3.5 h-3.5" />
+                            <span>Syringe changed (10.0 ml fresh syringe)</span>
                           </div>
                         )}
                         {ev.type === 'cannula_change' && (
-                          <div className="text-emerald-700 dark:text-emerald-300 font-medium">
-                            Cannula changed & site rotated (Day 1)
+                          <div className="text-emerald-700 dark:text-emerald-300 font-medium flex items-center gap-1.5">
+                            <Activity className="w-3.5 h-3.5" />
+                            <span>Cannula changed & site rotated (Day 1)</span>
                           </div>
                         )}
                         {ev.type === 'pump_start' && (
-                          <div className="text-emerald-700 dark:text-emerald-300 font-semibold">
-                            Pump started / resumed
+                          <div className="text-emerald-700 dark:text-emerald-300 font-semibold flex items-center gap-1.5">
+                            <Power className="w-3.5 h-3.5" />
+                            <span>Pump started / resumed flow</span>
                           </div>
                         )}
                         {ev.type === 'pump_stop' && (
-                          <div className="text-rose-700 dark:text-rose-300 font-semibold">
-                            Pump stopped / paused
+                          <div className="text-rose-700 dark:text-rose-300 font-semibold flex items-center gap-1.5">
+                            <Power className="w-3.5 h-3.5" />
+                            <span>Pump stopped / paused flow</span>
                           </div>
                         )}
                         {ev.type === 'symptom_note' && (
@@ -762,7 +409,19 @@ export const HistoricReports: React.FC<HistoricReportsProps> = ({
             </div>
           )}
         </div>
-      ) : null}
+      ) : (
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8 shadow-sm text-center space-y-2">
+          <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+            No Completed Historic Days Yet
+          </p>
+          <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
+            Historic reporting archives completed days at midnight (00:00). Today's live events are available under the <strong>Today's Infusion</strong> tab and will archive here automatically tomorrow.
+          </p>
+          <p className="text-xs text-sky-600 dark:text-sky-400 font-medium pt-1">
+            Tip: You can switch to <strong>Test Mode</strong> in Settings to explore historical logs with simulated clinical data.
+          </p>
+        </div>
+      )}
     </div>
   );
 };

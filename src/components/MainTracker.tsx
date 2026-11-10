@@ -305,164 +305,161 @@ export const MainTracker: React.FC<MainTrackerProps> = ({
         </div>
       )}
 
-      {/* Top Hero Grid: Rate in Use & Pump Stop/Start Control */}
-      <div className="grid grid-cols-1 md:grid-cols-12 gap-5">
-        {/* Card 1: Rate Currently in Use & Level Selector */}
-        <div className="md:col-span-7 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Gauge className="w-5 h-5 text-sky-600 dark:text-sky-400" />
-              <h1 className="text-base font-semibold text-slate-900 dark:text-white">
-                Infusion Rate In Use
-              </h1>
-            </div>
-            <span className="text-xs font-mono text-slate-500 dark:text-slate-400">
-              {formatDDMMYYYY(now)} · {format24HourTime(now)}
-            </span>
+      {/* Unified Single Current State Panel */}
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm space-y-4">
+        {/* Panel Header */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Gauge className="w-5 h-5 text-sky-600 dark:text-sky-400" />
+            <h1 className="text-base font-semibold text-slate-900 dark:text-white">
+              Pump Operational State & Infusion Rate
+            </h1>
           </div>
+          <span className="text-xs font-mono text-slate-500 dark:text-slate-400">
+            {formatDDMMYYYY(now)} · {format24HourTime(now)}
+          </span>
+        </div>
 
-          {/* Big High-Visibility Rate Readout */}
-          <div className="flex items-baseline justify-between p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
-            <div>
-              <span className="text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400 block">
-                Current Level
-              </span>
-              <span className="text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tight">
-                {pumpState.currentLevel} Rate
-              </span>
-            </div>
-            <div className="text-right">
-              <span className="text-3xl sm:text-4xl font-mono font-black tracking-tight text-sky-600 dark:text-sky-400 tabular-nums">
-                {pumpState.currentRate.toFixed(2)}
-              </span>
-              <span className="ml-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
-                ml/h
-              </span>
-            </div>
-          </div>
+        {/* Single Element: Current Rate & Running/Stopped Status */}
+        <div
+          className={`p-4 sm:p-5 rounded-2xl border transition-all ${
+            pumpState.isRunning
+              ? 'bg-emerald-50 dark:bg-emerald-950/50 border-emerald-300 dark:border-emerald-800'
+              : 'bg-rose-50 dark:bg-rose-950/50 border-rose-300 dark:border-rose-800'
+          }`}
+        >
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            {/* Left/Middle: Current Level with Running/Stopped span centred underneath, and Infusion Rate on same line */}
+            <div className="flex flex-wrap items-center gap-6 sm:gap-8">
+              {/* Current Level with status badge centred underneath */}
+              <div className="flex flex-col items-center text-center">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 block">
+                  Current Level
+                </span>
+                <span className="text-xl font-bold text-slate-900 dark:text-white uppercase tracking-tight block">
+                  {pumpState.currentLevel} Rate
+                </span>
+                {/* Centred under Current Level */}
+                <span
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider border shadow-2xs mt-1.5 ${
+                    pumpState.isRunning
+                      ? 'bg-white dark:bg-slate-900/90 border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-300'
+                      : 'bg-white dark:bg-slate-900/90 border-rose-300 dark:border-rose-700 text-rose-800 dark:text-rose-300'
+                  }`}
+                >
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                      pumpState.isRunning ? 'bg-emerald-600 animate-pulse' : 'bg-rose-600'
+                    }`}
+                  />
+                  {pumpState.isRunning ? 'Running' : 'Stopped'}
+                </span>
+              </div>
 
-          {/* Quick Rate Level Selector Buttons [Low, Base, High] */}
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                Change Infusion Rate Level:
-              </span>
-              <span className="text-xs text-slate-500 dark:text-slate-400">
-                Tap to switch
-              </span>
+              {/* Infusion Rate on the same line as Current Level, NO text label "Infusion Rate" */}
+              <div className="flex items-baseline">
+                <span
+                  className={`text-2xl sm:text-3xl font-mono font-black tracking-tight tabular-nums ${
+                    pumpState.isRunning
+                      ? 'text-sky-700 dark:text-sky-400'
+                      : 'text-slate-400 dark:text-slate-500'
+                  }`}
+                >
+                  {pumpState.currentRate.toFixed(2)}
+                </span>
+                <span className="ml-1 text-xs font-semibold text-slate-600 dark:text-slate-300">
+                  ml/h
+                </span>
+                {!pumpState.isRunning && (
+                  <span className="ml-2 text-xs font-bold text-rose-600 dark:text-rose-400">
+                    (Paused)
+                  </span>
+                )}
+              </div>
             </div>
-            <div className="grid grid-cols-3 gap-2.5">
-              {/* Low Rate */}
+
+            {/* Right: Start / Stop Toggle Button */}
+            <div className="flex items-center">
               <button
-                onClick={() => handleSelectRateLevel('low')}
-                className={`min-h-[52px] p-2.5 rounded-xl border flex flex-col items-center justify-center transition-all cursor-pointer ${
-                  pumpState.currentLevel === 'low'
-                    ? 'bg-sky-600 text-white font-bold border-sky-700 shadow-sm ring-2 ring-sky-300 dark:ring-sky-900'
-                    : 'bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200'
+                onClick={handleTogglePump}
+                className={`min-h-[44px] px-4 py-2 rounded-xl font-bold text-xs sm:text-sm text-white flex items-center justify-center gap-2 shadow-sm transition-all active:scale-[0.99] cursor-pointer whitespace-nowrap w-full sm:w-auto ${
+                  pumpState.isRunning
+                    ? 'bg-rose-600 hover:bg-rose-700'
+                    : 'bg-emerald-600 hover:bg-emerald-700'
                 }`}
               >
-                <span className="text-xs uppercase tracking-wide">Low</span>
-                <span className="font-mono text-sm font-bold tabular-nums">
-                  {settings.lowRate.toFixed(2)} ml/h
-                </span>
-              </button>
-
-              {/* Base Rate */}
-              <button
-                onClick={() => handleSelectRateLevel('base')}
-                className={`min-h-[52px] p-2.5 rounded-xl border flex flex-col items-center justify-center transition-all cursor-pointer ${
-                  pumpState.currentLevel === 'base'
-                    ? 'bg-sky-600 text-white font-bold border-sky-700 shadow-sm ring-2 ring-sky-300 dark:ring-sky-900'
-                    : 'bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200'
-                }`}
-              >
-                <span className="text-xs uppercase tracking-wide">Base</span>
-                <span className="font-mono text-sm font-bold tabular-nums">
-                  {settings.baseRate.toFixed(2)} ml/h
-                </span>
-              </button>
-
-              {/* High Rate */}
-              <button
-                onClick={() => handleSelectRateLevel('high')}
-                className={`min-h-[52px] p-2.5 rounded-xl border flex flex-col items-center justify-center transition-all cursor-pointer ${
-                  pumpState.currentLevel === 'high'
-                    ? 'bg-sky-600 text-white font-bold border-sky-700 shadow-sm ring-2 ring-sky-300 dark:ring-sky-900'
-                    : 'bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200'
-                }`}
-              >
-                <span className="text-xs uppercase tracking-wide">High</span>
-                <span className="font-mono text-sm font-bold tabular-nums">
-                  {settings.highRate.toFixed(2)} ml/h
-                </span>
+                {pumpState.isRunning ? (
+                  <>
+                    <Square className="w-3.5 h-3.5 fill-current" />
+                    <span>Stop Pump (Pause Infusion)</span>
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-3.5 h-3.5 fill-current" />
+                    <span>Start Pump (Resume Infusion)</span>
+                  </>
+                )}
               </button>
             </div>
           </div>
         </div>
 
-        {/* Card 2: Pump State Stop / Start (Big High-Visibility Visual) */}
-        <div className="md:col-span-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm flex flex-col justify-between space-y-4">
+        {/* Change Infusion Rate Level: Low, Base, High */}
+        <div className="space-y-1.5 pt-1">
           <div className="flex items-center justify-between">
-            <h2 className="text-base font-semibold text-slate-900 dark:text-white">
-              Pump Operational State
-            </h2>
-            <span
-              className={`text-xs font-bold px-2 py-0.5 rounded-full ${
-                pumpState.isRunning
-                  ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
-                  : 'bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300 border border-rose-300 dark:border-rose-800'
-              }`}
-            >
-              {pumpState.isRunning ? 'Active Flow' : 'Halted'}
+            <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+              Change Infusion Rate Level:
+            </span>
+            <span className="text-xs text-slate-500 dark:text-slate-400">
+              Tap to switch
             </span>
           </div>
-
-          {/* Visual Indicator of Pump State */}
-          <div
-            className={`p-5 rounded-2xl border text-center transition-all ${
-              pumpState.isRunning
-                ? 'bg-emerald-500/10 border-emerald-300 dark:border-emerald-800/80 text-emerald-900 dark:text-emerald-200'
-                : 'bg-rose-500/10 border-rose-300 dark:border-rose-800/80 text-rose-900 dark:text-rose-200'
-            }`}
-          >
-            <div className="flex items-center justify-center gap-2">
-              <span
-                className={`w-4 h-4 rounded-full ${
-                  pumpState.isRunning ? 'bg-emerald-600' : 'bg-rose-600'
-                }`}
-              />
-              <span className="text-2xl font-black uppercase tracking-tight">
-                {pumpState.isRunning ? 'RUNNING' : 'STOPPED'}
+          <div className="grid grid-cols-3 gap-2.5">
+            {/* Low Rate */}
+            <button
+              onClick={() => handleSelectRateLevel('low')}
+              className={`min-h-[52px] p-2.5 rounded-xl border flex flex-col items-center justify-center transition-all cursor-pointer ${
+                pumpState.currentLevel === 'low'
+                  ? 'bg-sky-600 text-white font-bold border-sky-700 shadow-sm ring-2 ring-sky-300 dark:ring-sky-900'
+                  : 'bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200'
+              }`}
+            >
+              <span className="text-xs uppercase tracking-wide">Low</span>
+              <span className="font-mono text-sm font-bold tabular-nums">
+                {settings.lowRate.toFixed(2)} ml/h
               </span>
-            </div>
-            <p className="mt-1 text-xs opacity-80">
-              {pumpState.isRunning
-                ? `Infusing continuous Fos-levodopa at ${pumpState.currentRate.toFixed(2)} ml/h`
-                : 'Pump infusion is paused. No medication is being delivered.'}
-            </p>
-          </div>
+            </button>
 
-          {/* Toggle Button */}
-          <button
-            onClick={handleTogglePump}
-            className={`min-h-[52px] w-full py-3 px-4 rounded-xl font-bold text-sm text-white flex items-center justify-center gap-2 shadow-sm transition-transform active:scale-[0.99] cursor-pointer ${
-              pumpState.isRunning
-                ? 'bg-rose-600 hover:bg-rose-700'
-                : 'bg-emerald-600 hover:bg-emerald-700'
-            }`}
-          >
-            {pumpState.isRunning ? (
-              <>
-                <Square className="w-5 h-5 fill-current" />
-                <span>Stop Pump (Pause Infusion)</span>
-              </>
-            ) : (
-              <>
-                <Play className="w-5 h-5 fill-current" />
-                <span>Start Pump (Resume Infusion)</span>
-              </>
-            )}
-          </button>
+            {/* Base Rate */}
+            <button
+              onClick={() => handleSelectRateLevel('base')}
+              className={`min-h-[52px] p-2.5 rounded-xl border flex flex-col items-center justify-center transition-all cursor-pointer ${
+                pumpState.currentLevel === 'base'
+                  ? 'bg-sky-600 text-white font-bold border-sky-700 shadow-sm ring-2 ring-sky-300 dark:ring-sky-900'
+                  : 'bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200'
+              }`}
+            >
+              <span className="text-xs uppercase tracking-wide">Base</span>
+              <span className="font-mono text-sm font-bold tabular-nums">
+                {settings.baseRate.toFixed(2)} ml/h
+              </span>
+            </button>
+
+            {/* High Rate */}
+            <button
+              onClick={() => handleSelectRateLevel('high')}
+              className={`min-h-[52px] p-2.5 rounded-xl border flex flex-col items-center justify-center transition-all cursor-pointer ${
+                pumpState.currentLevel === 'high'
+                  ? 'bg-sky-600 text-white font-bold border-sky-700 shadow-sm ring-2 ring-sky-300 dark:ring-sky-900'
+                  : 'bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200'
+              }`}
+            >
+              <span className="text-xs uppercase tracking-wide">High</span>
+              <span className="font-mono text-sm font-bold tabular-nums">
+                {settings.highRate.toFixed(2)} ml/h
+              </span>
+            </button>
+          </div>
         </div>
       </div>
 

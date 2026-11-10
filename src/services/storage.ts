@@ -613,11 +613,85 @@ export function getHistoricWeekRecords(dayRecords: DayUsageRecord[]): WeekUsageR
 }
 
 /**
- * Exports data to CSV file.
+ * Parses raw CSV text into a 2D array of rows, handling quotes and multi-line strings.
  */
-export function exportToCSV(events: LogEvent[], dayRecords: DayUsageRecord[]): void {
-  const rows: string[] = [];
+function parseCSVRows(csvText: string): string[][] {
+  const rows: string[][] = [];
+  let currentRow: string[] = [];
+  let currentField = '';
+  let inQuotes = false;
 
+  for (let i = 0; i < csvText.length; i++) {
+    const char = csvText[i];
+    if (char === '"') {
+      if (inQuotes && csvText[i + 1] === '"') {
+        currentField += '"';
+        i++; // skip escaped quote
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (char === ',' && !inQuotes) {
+      currentRow.push(currentField);
+      currentField = '';
+    } else if ((char === '\r' || char === '\n') && !inQuotes) {
+      if (char === '\r' && csvText[i + 1] === '\n') {
+        i++; // skip \n of \r\n
+      }
+      currentRow.push(currentField);
+      currentField = '';
+      if (currentRow.length > 0 && !(currentRow.length === 1 && currentRow[0] === '')) {
+        rows.push(currentRow);
+      }
+      currentRow = [];
+    } else {
+      currentField += char;
+    }
+  }
+
+  if (currentField.length > 0 || currentRow.length > 0) {
+    currentRow.push(currentField);
+    rows.push(currentRow);
+  }
+
+  return rows;
+}
+
+/**
+ * Exports data to CSV file including:
+ * 1. Current pump state & therapy settings (for full state reload / cross-device recovery)
+ * 2. Daily summaries for previous 90 days
+ * 3. Complete audit trail of events (up to 90 days)
+ */
+export function exportToCSV(
+  pumpState: PumpState,
+  settings: RateSettings,
+  events: LogEvent[],
+  dayRecords: DayUsageRecord[]
+): void {
+  const rows: string[] = [];
+  const now = new Date();
+
+  // SECTION 1: STATE & SETTINGS FOR COMPLETE RELOAD / RECOVERY
+  rows.push('--- PRO-DUODOPA APP STATE & BACKUP DATA ---');
+  rows.push('Key,Value,Description');
+  rows.push(`"version","2","Export schema version"`);
+  rows.push(`"export_timestamp","${now.toISOString()}","Backup generation timestamp"`);
+  rows.push(`"is_running","${pumpState.isRunning}","Pump running state (true/false)"`);
+  rows.push(`"current_level","${pumpState.currentLevel}","Active infusion rate level (low/base/high)"`);
+  rows.push(`"current_rate","${pumpState.currentRate}","Active infusion rate (ml/h)"`);
+  rows.push(`"syringe_infused_volume","${pumpState.syringeInfusedVolume}","Consumed volume from current 10ml syringe (ml)"`);
+  rows.push(`"last_syringe_change","${pumpState.lastSyringeChange}","Timestamp of last syringe replacement"`);
+  rows.push(`"last_cannula_change","${pumpState.lastCannulaChange}","Timestamp of last cannula insertion"`);
+  rows.push(`"last_state_change","${pumpState.lastStateChange}","Timestamp of last pump start/stop"`);
+  rows.push(`"last_tick_timestamp","${pumpState.lastTickTimestamp}","Timestamp of last volume calculation"`);
+  rows.push(`"low_rate","${settings.lowRate}","Configured low rate (ml/h)"`);
+  rows.push(`"base_rate","${settings.baseRate}","Configured base rate (ml/h)"`);
+  rows.push(`"high_rate","${settings.highRate}","Configured high rate (ml/h)"`);
+  rows.push(`"extra_dose_amount","${settings.extraDoseAmount}","Configured extra dose bolus amount (ml)"`);
+  rows.push(`"extra_dose_wait_hours","${settings.extraDoseWaitHours}","Configured wait period between extra doses (hours)"`);
+
+  rows.push('');
+  // SECTION 2: DAILY SUMMARIES (PREVIOUS 90 DAYS)
   rows.push('--- DAILY INFUSION SUMMARIES (PREVIOUS 90 DAYS) ---');
   rows.push('Date (DD/MM/YYYY),Total Infused (ml),Baseline (ml),Extra Doses (ml),Extra Dose Count,Average Rate (ml/h)');
   dayRecords.forEach((d) => {
@@ -627,35 +701,263 @@ export function exportToCSV(events: LogEvent[], dayRecords: DayUsageRecord[]): v
   });
 
   rows.push('');
-  rows.push('--- CLINICAL LOG OF EVENTS & NOTES ---');
-  rows.push('Date (DD/MM/YYYY),Time (24h),Event Type,Rate Level,Rate (ml/h),Dose (ml),ON/OFF State,Notes');
+  // SECTION 3: DETAILED AUDIT TRAIL OF ALL EVENTS (UP TO 90 DAYS)
+  rows.push('--- CLINICAL LOG OF EVENTS & AUDIT TRAIL ---');
+  rows.push('Event ID,Timestamp,Effective Time,Event Type,Rate Level,Rate (ml/h),Dose (ml),ON/OFF State,Notes,Undone Event ID,Syringe Capacity,Cannula Day,Previous Rate Level,Previous Rate Value');
 
-  const sortedEvents = [...events].sort(
+  // Filter events to max 90 days
+  const cutoffTime = now.getTime() - 90 * 24 * 3600 * 1000;
+  const filteredEvents = events.filter((ev) => new Date(ev.timestamp).getTime() >= cutoffTime);
+
+  const sortedEvents = [...filteredEvents].sort(
     (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
   );
 
   sortedEvents.forEach((ev) => {
-    const dStr = formatDDMMYYYY(ev.effectiveTime || ev.timestamp);
-    const tStr = format24HourTime(ev.effectiveTime || ev.timestamp);
-    const typeLabel = ev.type.replace(/_/g, ' ').toUpperCase();
+    const type = ev.type;
     const rateLevel = ev.details.rateLevel || '';
     const rateValue = ev.details.rateValue !== undefined ? ev.details.rateValue : '';
     const doseAmt = ev.details.doseAmount !== undefined ? ev.details.doseAmount : '';
     const onOff = ev.details.onOffStatus || '';
     const cleanNote = (ev.details.noteText || '').replace(/"/g, '""');
+    const undoneId = ev.details.undoneEventId || '';
+    const syrCap = ev.details.syringeCapacity !== undefined ? ev.details.syringeCapacity : '';
+    const canDay = ev.details.cannulaDay !== undefined ? ev.details.cannulaDay : '';
+    const prevLevel = ev.details.previousRateLevel || '';
+    const prevRate = ev.details.previousRateValue !== undefined ? ev.details.previousRateValue : '';
 
     rows.push(
-      `"${dStr}","${tStr}","${typeLabel}","${rateLevel}","${rateValue}","${doseAmt}","${onOff}","${cleanNote}"`
+      `"${ev.id}","${ev.timestamp}","${ev.effectiveTime || ev.timestamp}","${type}","${rateLevel}","${rateValue}","${doseAmt}","${onOff}","${cleanNote}","${undoneId}","${syrCap}","${canDay}","${prevLevel}","${prevRate}"`
     );
   });
 
   const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + encodeURIComponent(rows.join('\n'));
   const link = document.createElement('a');
   link.setAttribute('href', csvContent);
-  const now = new Date();
   const fileDate = formatDDMMYYYY(now).replace(/\//g, '_');
-  link.setAttribute('download', `ProDuodopa_Infusion_Log_${fileDate}.csv`);
+  link.setAttribute('download', `ProDuodopa_DataLog_${fileDate}.csv`);
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
+}
+
+export interface CSVImportResult {
+  success: boolean;
+  pumpState?: PumpState;
+  settings?: RateSettings;
+  events?: LogEvent[];
+  error?: string;
+  summary?: {
+    eventCount: number;
+    exportTimestamp?: string;
+    hasState: boolean;
+  };
+}
+
+/**
+ * Parses and validates an uploaded CSV file to restore state and log data.
+ */
+export function parseImportCSV(csvText: string): CSVImportResult {
+  try {
+    if (!csvText || !csvText.trim()) {
+      return {success: false, error: 'The uploaded file is empty.'};
+    }
+
+    const rows = parseCSVRows(csvText);
+    if (rows.length === 0) {
+      return {success: false, error: 'No valid rows found in CSV.'};
+    }
+
+    let section: 'NONE' | 'STATE' | 'SUMMARIES' | 'EVENTS' = 'NONE';
+    const stateMap = new Map<string, string>();
+    const parsedEvents: LogEvent[] = [];
+
+    for (let r = 0; r < rows.length; r++) {
+      const row = rows[r];
+      const firstCell = (row[0] || '').trim();
+
+      if (firstCell.includes('--- PRO-DUODOPA APP STATE')) {
+        section = 'STATE';
+        continue;
+      }
+      if (firstCell.includes('--- DAILY INFUSION SUMMARIES')) {
+        section = 'SUMMARIES';
+        continue;
+      }
+      if (firstCell.includes('--- CLINICAL LOG OF EVENTS')) {
+        section = 'EVENTS';
+        continue;
+      }
+
+      if (section === 'STATE') {
+        if (row.length >= 2) {
+          const key = row[0].trim().toLowerCase();
+          const val = row[1].trim();
+          if (key !== 'key' && key !== 'section') {
+            stateMap.set(key, val);
+          }
+        }
+      } else if (section === 'EVENTS') {
+        if (firstCell.toLowerCase().includes('event id') || firstCell.toLowerCase().includes('date')) {
+          continue;
+        }
+
+        if (row.length >= 4) {
+          const isModern =
+            row[0].startsWith('evt_') ||
+            row[0].startsWith('test_') ||
+            (row[1] && row[1].includes('T') && row[1].includes('Z'));
+
+          if (isModern) {
+            const id = row[0].trim();
+            const timestamp = row[1].trim();
+            const effectiveTime = (row[2] || row[1]).trim();
+            const rawType = (row[3] || '').trim().toLowerCase().replace(/\s+/g, '_');
+            const type = rawType as LogEvent['type'];
+            const rateLevel = (row[4] || '').trim() as any;
+            const rateValue = row[5] ? parseFloat(row[5]) : undefined;
+            const doseAmount = row[6] ? parseFloat(row[6]) : undefined;
+            const onOffStatus = row[7] === 'ON' || row[7] === 'OFF' ? row[7] : null;
+            const noteText = row[8] || '';
+            const undoneEventId = row[9] || undefined;
+            const syringeCapacity = row[10] ? parseFloat(row[10]) : undefined;
+            const cannulaDay = row[11] ? parseInt(row[11], 10) : undefined;
+            const previousRateLevel = (row[12] || '').trim() as any;
+            const previousRateValue = row[13] ? parseFloat(row[13]) : undefined;
+
+            if (id && timestamp) {
+              parsedEvents.push({
+                id,
+                timestamp,
+                effectiveTime,
+                type,
+                details: {
+                  rateLevel: rateLevel || undefined,
+                  rateValue: !isNaN(rateValue as number) ? rateValue : undefined,
+                  doseAmount: !isNaN(doseAmount as number) ? doseAmount : undefined,
+                  onOffStatus,
+                  noteText: noteText || undefined,
+                  undoneEventId,
+                  syringeCapacity: !isNaN(syringeCapacity as number) ? syringeCapacity : undefined,
+                  cannulaDay: !isNaN(cannulaDay as number) ? cannulaDay : undefined,
+                  previousRateLevel: previousRateLevel || undefined,
+                  previousRateValue: !isNaN(previousRateValue as number) ? previousRateValue : undefined,
+                },
+              });
+            }
+          } else {
+            // Backwards compatibility with legacy CSV format
+            const dateStr = row[0].trim();
+            const timeStr = row[1].trim();
+            const typeStr = (row[2] || '').trim().toLowerCase().replace(/\s+/g, '_');
+            let isoTime = new Date().toISOString();
+            if (dateStr.includes('/')) {
+              const [d, m, y] = dateStr.split('/').map((n) => parseInt(n, 10));
+              let h = 12;
+              let min = 0;
+              if (timeStr.includes(':')) {
+                [h, min] = timeStr.split(':').map((n) => parseInt(n, 10));
+              }
+              const dt = new Date(y, m - 1, d, h, min);
+              if (!isNaN(dt.getTime())) isoTime = dt.toISOString();
+            }
+
+            parsedEvents.push({
+              id: `imported_evt_${Date.now()}_${r}`,
+              timestamp: isoTime,
+              effectiveTime: isoTime,
+              type: (typeStr as any) || 'symptom_note',
+              details: {
+                rateLevel: (row[3] as any) || undefined,
+                rateValue: row[4] ? parseFloat(row[4]) : undefined,
+                doseAmount: row[5] ? parseFloat(row[5]) : undefined,
+                onOffStatus: row[6] === 'ON' || row[6] === 'OFF' ? row[6] : null,
+                noteText: row[7] || undefined,
+              },
+            });
+          }
+        }
+      }
+    }
+
+    const now = new Date();
+    const cutoffTime = now.getTime() - 90 * 24 * 3600 * 1000;
+    const validEvents = parsedEvents.filter((ev) => {
+      const t = new Date(ev.timestamp).getTime();
+      return !isNaN(t) && t >= cutoffTime;
+    });
+
+    const hasState = stateMap.size > 0;
+    let pumpState: PumpState | undefined = undefined;
+    let settings: RateSettings | undefined = undefined;
+
+    if (hasState) {
+      const isRunning = stateMap.get('is_running') === 'true';
+      const currentLevel = (stateMap.get('current_level') || 'base') as any;
+      const currentRate = parseFloat(stateMap.get('current_rate') || '0.34') || 0.34;
+      const syringeInfusedVolume = Math.max(
+        0,
+        Math.min(10.0, parseFloat(stateMap.get('syringe_infused_volume') || '0') || 0)
+      );
+      const lastSyringeChange = stateMap.get('last_syringe_change') || now.toISOString();
+      const lastCannulaChange = stateMap.get('last_cannula_change') || now.toISOString();
+      const lastStateChange = stateMap.get('last_state_change') || now.toISOString();
+      const lastTickTimestamp = stateMap.get('last_tick_timestamp') || now.toISOString();
+
+      pumpState = {
+        isRunning,
+        currentLevel,
+        currentRate,
+        syringeInfusedVolume,
+        lastSyringeChange,
+        lastCannulaChange,
+        lastStateChange,
+        lastTickTimestamp,
+      };
+
+      const lowRate = parseFloat(stateMap.get('low_rate') || '0.22') || DEFAULT_SETTINGS.lowRate;
+      const baseRate = parseFloat(stateMap.get('base_rate') || '0.34') || DEFAULT_SETTINGS.baseRate;
+      const highRate = parseFloat(stateMap.get('high_rate') || '0.48') || DEFAULT_SETTINGS.highRate;
+      const extraDoseAmount =
+        parseFloat(stateMap.get('extra_dose_amount') || '0.17') || DEFAULT_SETTINGS.extraDoseAmount;
+      const extraDoseWaitHours = Math.min(
+        8,
+        Math.max(2, parseInt(stateMap.get('extra_dose_wait_hours') || '2', 10) || 2)
+      );
+
+      settings = {
+        lowRate,
+        baseRate,
+        highRate,
+        extraDoseAmount,
+        extraDoseWaitHours,
+      };
+    } else if (validEvents.length > 0) {
+      // Reconstruct basic pump state from events if legacy CSV
+      pumpState = generateDefaultRealPumpState();
+      settings = DEFAULT_SETTINGS;
+    } else {
+      return {
+        success: false,
+        error: 'The CSV file does not contain recognisable Pro-Duodopa backup or clinical log data.',
+      };
+    }
+
+    return {
+      success: true,
+      pumpState,
+      settings,
+      events: validEvents,
+      summary: {
+        eventCount: validEvents.length,
+        exportTimestamp: stateMap.get('export_timestamp'),
+        hasState,
+      },
+    };
+  } catch (err) {
+    return {
+      success: false,
+      error: `Error parsing CSV: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
 }

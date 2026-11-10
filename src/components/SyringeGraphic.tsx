@@ -21,8 +21,6 @@ interface SyringeGraphicProps {
 
 export const SyringeGraphic: React.FC<SyringeGraphicProps> = ({
   remainingMl,
-  capacityMl,
-  consumedMl,
   percentageRemaining,
   hoursUntilEmpty,
   hoursElapsedSinceChange,
@@ -85,9 +83,9 @@ export const SyringeGraphic: React.FC<SyringeGraphicProps> = ({
 
       {/* Syringe Visualizer & Readout */}
       <div className="grid grid-cols-1 sm:grid-cols-12 gap-5 items-center">
-        {/* Left: Precision Vector Syringe Diagram */}
-        <div className="sm:col-span-5 flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-100 dark:border-slate-800">
-          <div className="flex items-center gap-4">
+        {/* Left: Precision Vector Syringe Diagram + Fluid Volume & Time Until Empty */}
+        <div className="sm:col-span-6 flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-100 dark:border-slate-800">
+          <div className="flex items-center gap-5">
             {/* Vector Syringe Graphic */}
             <div className="relative flex flex-col items-center select-none">
               {/* Plunger Top Flange */}
@@ -143,17 +141,28 @@ export const SyringeGraphic: React.FC<SyringeGraphicProps> = ({
               <div className="w-3.5 h-3 bg-slate-300 dark:bg-slate-600 rounded-b-xs border-x border-b border-slate-400 dark:border-slate-500" />
             </div>
 
-            {/* Quick Level Summary next to graphic */}
-            <div className="flex flex-col text-left space-y-1">
-              <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                Fluid Volume
-              </span>
-              <span className="text-xl font-bold font-mono text-slate-900 dark:text-white tabular-nums">
-                {remainingMl.toFixed(1)} ml
-              </span>
-              <span className="text-xs font-medium text-slate-500 dark:text-slate-400 tabular-nums">
-                {percentageRemaining}% full
-              </span>
+            {/* Level & Time Until Empty Summary directly under Fluid Volume */}
+            <div className="flex flex-col text-left space-y-2">
+              <div>
+                <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+                  Fluid Volume
+                </span>
+                <span className="text-2xl font-bold font-mono text-slate-900 dark:text-white tabular-nums block">
+                  {remainingMl.toFixed(2)} ml
+                </span>
+                <span className="text-xs font-medium text-slate-500 dark:text-slate-400 tabular-nums block">
+                  {percentageRemaining}% full
+                </span>
+              </div>
+
+              <div className="pt-2 border-t border-slate-200 dark:border-slate-700/80">
+                <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+                  Time Until Empty
+                </span>
+                <span className="text-base font-bold font-mono text-slate-900 dark:text-white tabular-nums block">
+                  {timeUntilEmptyStr}
+                </span>
+              </div>
             </div>
           </div>
           <span className="mt-2 text-[10px] font-medium text-slate-400 dark:text-slate-500">
@@ -161,50 +170,11 @@ export const SyringeGraphic: React.FC<SyringeGraphicProps> = ({
           </span>
         </div>
 
-        {/* Right: Metrics & Details */}
-        <div className="sm:col-span-7 space-y-3">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
-              <span className="text-xs text-slate-500 dark:text-slate-400 font-medium block">
-                Remaining Level
-              </span>
-              <div className="mt-1 flex items-baseline gap-1">
-                <span className="text-2xl font-bold font-mono tracking-tight text-slate-900 dark:text-white tabular-nums">
-                  {remainingMl.toFixed(2)}
-                </span>
-                <span className="text-sm font-semibold text-slate-600 dark:text-slate-300">
-                  / 10 ml
-                </span>
-              </div>
-              <div className="mt-2 w-full bg-slate-200 dark:bg-slate-700 h-2 rounded-full overflow-hidden">
-                <div
-                  className={`h-full bg-gradient-to-r ${liquidColor} transition-all duration-300`}
-                  style={{width: `${Math.min(100, Math.max(0, percentageRemaining))}%`}}
-                />
-              </div>
-              <span className="mt-1 text-[11px] font-medium text-slate-500 dark:text-slate-400 block tabular-nums">
-                {percentageRemaining}% capacity available
-              </span>
-            </div>
-
-            <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
-              <span className="text-xs text-slate-500 dark:text-slate-400 font-medium block">
-                Time Until Empty
-              </span>
-              <div className="mt-1 flex items-baseline gap-1">
-                <span className="text-2xl font-bold font-mono tracking-tight text-slate-900 dark:text-white tabular-nums">
-                  {timeUntilEmptyStr}
-                </span>
-              </div>
-              <span className="mt-3 text-[11px] text-slate-500 dark:text-slate-400 block tabular-nums">
-                Consumed: {consumedMl.toFixed(2)} ml
-              </span>
-            </div>
-          </div>
-
+        {/* Right: Elapsed Age & Change Syringe Action */}
+        <div className="sm:col-span-6 flex flex-col justify-center space-y-3">
           {/* Syringe Age Timer with 24-Hour Visual Cue */}
           <div
-            className={`p-3 rounded-xl border flex items-center justify-between ${
+            className={`p-3.5 rounded-xl border flex items-center justify-between ${
               isOver24Hours
                 ? 'bg-rose-100/70 dark:bg-rose-950/80 border-rose-300 dark:border-rose-700 text-rose-950 dark:text-rose-100 font-medium'
                 : 'bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300'
@@ -232,7 +202,7 @@ export const SyringeGraphic: React.FC<SyringeGraphicProps> = ({
           {/* Change Syringe Action Button */}
           <button
             onClick={onChangeSyringe}
-            className="w-full min-h-[48px] py-3 px-4 rounded-xl font-medium text-sm text-white bg-sky-600 hover:bg-sky-700 active:scale-[0.99] transition-all flex items-center justify-center gap-2 shadow-sm cursor-pointer"
+            className="w-full min-h-[48px] py-3.5 px-4 rounded-xl font-bold text-sm text-white bg-sky-600 hover:bg-sky-700 active:scale-[0.99] transition-all flex items-center justify-center gap-2 shadow-sm cursor-pointer"
           >
             <RefreshCw className="w-4 h-4" />
             <span>Change Syringe (New 10 ml)</span>
@@ -242,3 +212,4 @@ export const SyringeGraphic: React.FC<SyringeGraphicProps> = ({
     </div>
   );
 };
+
